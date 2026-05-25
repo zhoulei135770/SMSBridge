@@ -79,7 +79,7 @@ echo 2ecc 3012 | sudo tee /sys/bus/usb-serial/drivers/option1/new_id
 sudo usermod -a -G dialout $USER
 ```
 
-详细说明见 [Wiki — ML307A 驱动安装](https://github.com/yd10086/SMSBridge/wiki)
+详细说明见 [Wiki — ML307A 驱动安装](https://github.com/zhoulei135770/SMSBridge/wiki)
 
 ### Windows
 
@@ -93,7 +93,7 @@ sudo usermod -a -G dialout $USER
 
 ```bash
 # 需要 Go 1.22+
-git clone https://github.com/yd10086/SMSBridge.git
+git clone https://github.com/zhoulei135770/SMSBridge.git
 cd SMSBridge
 go build -ldflags="-s -w" -o sms-bridge .
 
