@@ -72,18 +72,30 @@ chmod +x sms-forwarder-linux-amd64
 
 ### Linux
 
-```bash
-# 驱动绑定（程序内已集成一键绑定）
-echo 2ecc 3012 | sudo tee /sys/bus/usb-serial/drivers/option1/new_id
-# 加入 dialout 组
-sudo usermod -a -G dialout $USER
-```
+ML307A 的 USB 接口类型是 Vendor Specific Class (FF)，Linux 的 option 驱动不会自动识别。需要手动绑定：
 
-详细说明见 [Wiki — ML307A 驱动安装](https://github.com/zhoulei135770/SMSBridge/wiki)
+```bash
+# 方式一：程序内一键绑定（设备诊断页 → 点击「🔧 一键绑定」）
+# 方式二：手动写入
+echo 2ecc 3012 | sudo tee /sys/bus/usb-serial/drivers/option1/new_id
+
+# 加入 dialout 组（需重新登录生效）
+sudo usermod -a -G dialout $USER
+
+# 方式三：永久 udev 规则（推荐）
+sudo tee /etc/udev/rules.d/99-ml307a.rules << 'EOF'
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="2ecc", ATTR{idProduct}=="3012", \
+  RUN+="/bin/sh -c 'echo 2ecc 3012 > /sys/bus/usb-serial/drivers/option1/new_id'"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2ecc", ATTRS{idProduct}=="3012", \
+  GROUP="dialout", MODE="0660"
+EOF
+sudo udevadm control --reload
+```
 
 ### Windows
 
-安装 [CMIOT ML307A USB 驱动](https://www.cmiot.com/)，设备管理器会显示 COM 端口。
+需要安装 CMIOT 官方 USB 驱动。在[中移物联网官网](https://www.cmiot.com) → 服务支持 → 下载中心，搜索"ML307A 驱动"。
+安装后设备管理器会出现 COM 端口。
 
 ### macOS
 
