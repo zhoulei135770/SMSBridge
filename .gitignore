@@ -1,0 +1,19 @@
+# Binaries
+sms-bridge
+sms-forwarder-go
+smstest
+*.exe
+dist/
+
+# Config with real tokens
+config.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
