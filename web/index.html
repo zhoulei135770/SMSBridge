@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMS Forwarder - ML307A</title>
+    <link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h1><span class="logo-icon"></span>SMS Forwarder</h1>
+                <span class="version">v2.0</span>
+            </div>
+            <ul class="nav-list">
+                <li>
+                    <a href="#dashboard" class="nav-item active" data-page="dashboard">
+                        <span class="nav-icon nav-dashboard"></span>
+                        <span class="nav-text">仪表盘</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#forward" class="nav-item" data-page="forward">
+                        <span class="nav-icon nav-forward"></span>
+                        <span class="nav-text">验证码转发</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#sms" class="nav-item" data-page="sms">
+                        <span class="nav-icon nav-sms"></span>
+                        <span class="nav-text">短信记录</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#send" class="nav-item" data-page="send">
+                        <span class="nav-icon nav-send"></span>
+                        <span class="nav-text">发送短信</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#dialer" class="nav-item" data-page="dialer">
+                        <span class="nav-icon nav-dialer"></span>
+                        <span class="nav-text">拨号盘</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#calls" class="nav-item" data-page="calls">
+                        <span class="nav-icon nav-calls"></span>
+                        <span class="nav-text">通话记录</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#phonebook" class="nav-item" data-page="phonebook">
+                        <span class="nav-icon nav-phonebook"></span>
+                        <span class="nav-text">电话本</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#diagnostics" class="nav-item" data-page="diagnostics">
+                        <span class="nav-icon nav-diag"></span>
+                        <span class="nav-text">设备诊断</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#settings" class="nav-item" data-page="settings">
+                        <span class="nav-icon nav-settings"></span>
+                        <span class="nav-text">设置</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#autostart" class="nav-item" data-page="autostart">
+                        <span class="nav-icon nav-autostart"></span>
+                        <span class="nav-text">自启动</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#logs" class="nav-item" data-page="logs">
+                        <span class="nav-icon nav-logs"></span>
+                        <span class="nav-text">日志</span>
+                    </a>
+                </li>
+            </ul>
+            <div class="sidebar-footer">
+                <div class="status-indicator" id="statusDot">
+                    <span class="dot offline"></span>
+                    <span id="statusText">未连接</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard -->
+            <section class="page active" id="page-dashboard">
+                <h2>仪表盘</h2>
+                <div class="status-cards" id="statusCards">
+                    <div class="card">
+                        <div class="card-title">状态</div>
+                        <div class="card-value" id="cardStatus">未连接</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">信号强度</div>
+                        <div class="card-value signal-bar" id="cardSignal">
+                            <div class="progress-bar"><div class="progress-fill" id="signalFill" style="width:0%"></div></div>
+                            <span class="signal-text">-</span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">运营商</div>
+                        <div class="card-value" id="cardOperator">-</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">网络状态</div>
+                        <div class="card-value" id="cardNetwork">-</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">IMEI</div>
+                        <div class="card-value imei" id="cardIMEI">-</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">短信总数</div>
+                        <div class="card-value" id="cardSMSCount">0</div>
+                    </div>
+                </div>
+                <div class="section-header">
+                    <h3>最近短信</h3>
+                    <button class="btn btn-sm" onclick="refreshRecentSMS()">刷新</button>
+                </div>
+                <div class="sms-list" id="recentSMSList">
+                    <div class="empty-state">暂无短信</div>
+                </div>
+            </section>
+
+            <!-- Forward Settings -->
+            <section class="page" id="page-forward">
+                <h2>验证码转发</h2>
+                <div class="card-group">
+                    <div class="card">
+                        <h3>关键词管理</h3>
+                        <div class="filter-mode-row">
+                            <label>过滤模式:</label>
+                            <select id="filterMode" onchange="updateFilterMode()">
+                                <option value="whitelist">白名单（匹配才转发）</option>
+                                <option value="blacklist">黑名单（匹配不转发）</option>
+                                <option value="all">全部转发</option>
+                            </select>
+                        </div>
+                        <div class="filter-options">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="forwardLinks" onchange="updateFilterOptions()"> 提取并转发链接
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="forwardLinksOnly" onchange="updateFilterOptions()"> 仅转发含链接的短信
+                            </label>
+                        </div>
+                        <div class="input-row">
+                            <input type="text" id="keywordInput" placeholder="输入关键词">
+                            <button class="btn btn-primary" onclick="addKeyword()">添加</button>
+                        </div>
+                        <div class="tag-list" id="keywordList"></div>
+                    </div>
+                    <div class="card">
+                        <h3>Webhook 配置</h3>
+                        <div class="form-group">
+                            <label>钉钉 Webhook</label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="dingEnabled" onchange="updateWebhookConfig()"> 启用
+                            </label>
+                            <select id="dingMode" onchange="updateWebhookConfig()">
+                                <option value="keyword">关键词模式</option>
+                                <option value="sign">签名模式</option>
+                            </select>
+                            <input type="text" id="dingToken" placeholder="access_token" onchange="updateWebhookConfig()">
+                            <input type="text" id="dingSecret" placeholder="secret (签名模式)" onchange="updateWebhookConfig()">
+                            <button class="btn btn-sm" onclick="testWebhook('dingtalk')">测试钉钉</button>
+                        </div>
+                        <div class="form-group">
+                            <label>企业微信 Webhook</label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="wechatEnabled" onchange="updateWebhookConfig()"> 启用
+                            </label>
+                            <input type="text" id="wechatKey" placeholder="key" onchange="updateWebhookConfig()">
+                            <button class="btn btn-sm" onclick="testWebhook('wechat')">测试企微</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>转发日志</h3>
+                    <div class="log-list" id="forwardLog">
+                        <div class="empty-state">暂无记录</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SMS Records -->
+            <section class="page" id="page-sms">
+                <h2>短信记录</h2>
+                <div class="section-header">
+                    <div class="search-box">
+                        <input type="text" id="smsSearch" placeholder="搜索短信..." oninput="filterSMS()">
+                    </div>
+                    <button class="btn" onclick="loadSMS()">刷新</button>
+                </div>
+                <div class="sms-list" id="allSMSList">
+                    <div class="empty-state">暂无短信记录</div>
+                </div>
+            </section>
+
+            <!-- Send SMS -->
+            <section class="page" id="page-send">
+                <h2>发送短信</h2>
+                <div class="card">
+                    <div class="form-group">
+                        <label>收件人号码</label>
+                        <input type="tel" id="sendNumber" placeholder="输入手机号码">
+                    </div>
+                    <div class="form-group">
+                        <label>短信内容</label>
+                        <textarea id="sendContent" rows="4" placeholder="输入短信内容" oninput="updateCharCount()"></textarea>
+                        <div class="char-count"><span id="charCount">0</span>/70</div>
+                    </div>
+                    <button class="btn btn-primary" onclick="sendSMS()">发送</button>
+                </div>
+            </section>
+
+            <!-- Dialer -->
+            <section class="page" id="page-dialer">
+                <h2>拨号盘</h2>
+                <div class="card">
+                    <div class="dialer-display">
+                        <input type="text" id="dialNumber" placeholder="输入号码" readonly>
+                    </div>
+                    <div class="dialer-pad">
+                        <button class="dial-btn" onclick="dialDigit('1')">1</button>
+                        <button class="dial-btn" onclick="dialDigit('2')">2</button>
+                        <button class="dial-btn" onclick="dialDigit('3')">3</button>
+                        <button class="dial-btn" onclick="dialDigit('4')">4</button>
+                        <button class="dial-btn" onclick="dialDigit('5')">5</button>
+                        <button class="dial-btn" onclick="dialDigit('6')">6</button>
+                        <button class="dial-btn" onclick="dialDigit('7')">7</button>
+                        <button class="dial-btn" onclick="dialDigit('8')">8</button>
+                        <button class="dial-btn" onclick="dialDigit('9')">9</button>
+                        <button class="dial-btn" onclick="dialDigit('*')">*</button>
+                        <button class="dial-btn" onclick="dialDigit('0')">0</button>
+                        <button class="dial-btn" onclick="dialDigit('#')">#</button>
+                    </div>
+                    <div class="dialer-actions">
+                        <button class="btn btn-danger" onclick="dialClear()">清除</button>
+                        <button class="btn btn-success" onclick="dialCall()">拨打</button>
+                        <button class="btn btn-warning" onclick="dialHangup()">挂断</button>
+                    </div>
+                    <div id="lastDialStatus"></div>
+                </div>
+            </section>
+
+            <!-- Call History -->
+            <section class="page" id="page-calls">
+                <h2>通话记录</h2>
+                <div class="call-list" id="callHistoryList">
+                    <div class="empty-state">暂无通话记录</div>
+                </div>
+            </section>
+
+            <!-- Phonebook -->
+            <section class="page" id="page-phonebook">
+                <h2>电话本</h2>
+                <div class="card">
+                    <div class="input-row">
+                        <input type="text" id="pbName" placeholder="姓名">
+                        <input type="tel" id="pbNumber" placeholder="号码">
+                        <button class="btn btn-primary" onclick="addPhonebookEntry()">添加</button>
+                    </div>
+                </div>
+                <div class="section-header">
+                    <h3>联系人列表</h3>
+                    <button class="btn btn-sm" onclick="loadPhonebook()">刷新</button>
+                </div>
+                <div class="contact-list" id="phonebookList">
+                    <div class="empty-state">暂无联系人</div>
+                </div>
+            </section>
+
+            <!-- Diagnostics -->
+            <section class="page" id="page-diagnostics">
+                <h2>设备诊断</h2>
+                <div class="card">
+                    <h3>平台信息</h3>
+                    <div id="platformInfo">加载中...</div>
+                </div>
+                <div class="card">
+                    <h3>驱动绑定 (Linux)</h3>
+                    <div id="driverInfo">
+                        <button class="btn btn-warning" onclick="bindDriver()">一键绑定 ML307A 驱动</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>设备信息</h3>
+                    <div class="device-info-grid" id="deviceInfoGrid">
+                        <div class="info-item"><span class="label">信号:</span><span class="value">-</span></div>
+                        <div class="info-item"><span class="label">网络:</span><span class="value">-</span></div>
+                        <div class="info-item"><span class="label">IMEI:</span><span class="value">-</span></div>
+                        <div class="info-item"><span class="label">运营商:</span><span class="value">-</span></div>
+                        <div class="info-item"><span class="label">SIM:</span><span class="value">-</span></div>
+                        <div class="info-item"><span class="label">设备时间:</span><span class="value">-</span></div>
+                    </div>
+                    <button class="btn btn-sm" onclick="refreshDevices()">刷新</button>
+                </div>
+            </section>
+
+            <!-- Settings -->
+            <section class="page" id="page-settings">
+                <h2>设置</h2>
+                <div class="card">
+                    <h3>配置管理</h3>
+                    <div class="btn-group">
+                        <button class="btn" onclick="exportConfig()">导出配置</button>
+                        <button class="btn" onclick="importConfig()">导入配置</button>
+                        <button class="btn btn-danger" onclick="resetConfig()">重置默认</button>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>串口设置</h3>
+                    <div class="form-group">
+                        <label>串口端口</label>
+                        <input type="text" id="cfgSerialPort" placeholder="auto 或 /dev/ttyUSB0">
+                    </div>
+                    <div class="form-group">
+                        <label>波特率</label>
+                        <input type="number" id="cfgBaudrate" placeholder="115200">
+                    </div>
+                    <button class="btn btn-primary" onclick="saveSerialConfig()">保存</button>
+                </div>
+            </section>
+
+            <!-- Autostart -->
+            <section class="page" id="page-autostart">
+                <h2>自启动</h2>
+                <div class="card">
+                    <h3>开机自启动</h3>
+                    <div class="autostart-status">
+                        <div class="status-badge" id="autostartBadge">检查中...</div>
+                        <div class="platform-info" id="autostartPlatform"></div>
+                    </div>
+                    <button class="btn btn-primary" id="autostartToggle" onclick="toggleAutostart()">切换</button>
+                </div>
+            </section>
+
+            <!-- Logs -->
+            <section class="page" id="page-logs">
+                <h2>日志</h2>
+                <div class="log-list" id="logContainer">
+                    <div class="empty-state">暂无日志</div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="/web/app.js"></script>
+</body>
+</html>

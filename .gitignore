@@ -1,0 +1,7 @@
+/sms-forwarder-go
+/sms-forwarder-go-*
+dist/*.exe
+dist/sms-forwarder-*
+*.log
+/tmp/
+.DS_Store
