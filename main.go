@@ -573,6 +573,36 @@ func handleDriverBind(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "bound"})
 }
 
+// POST /api/recover
+func handleRecoverModem(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeJSON(w, map[string]string{"error": "method not allowed"})
+		return
+	}
+	// Close current modem connection first
+	stopPolling()
+	modem.Close()
+	// Try USB recovery (Linux only, no-op elsewhere)
+	RecoverML307A()
+	// Re-find port and reconnect
+	port := GetConfig().Serial.Port
+	if port == "auto" || port == "" {
+		port = FindModemPort()
+	}
+	if port == "" {
+		writeJSON(w, map[string]string{"error": "未找到串口，请检查模块连接"})
+		return
+	}
+	if err := modem.Open(port, 115200); err != nil {
+		writeJSON(w, map[string]string{"error": "连接失败: " + err.Error()})
+		return
+	}
+	modem.Init()
+	startPolling()
+	addLog("info", "模组已恢复", port)
+	writeJSON(w, map[string]string{"status": "recovered", "port": port})
+}
+
 // GET/POST /api/autostart
 func handleAutoStart(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -755,6 +785,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/devices", corsMiddleware(handleDevices))
 	mux.HandleFunc("/api/platform", corsMiddleware(handlePlatform))
 	mux.HandleFunc("/api/driver/bind", corsMiddleware(handleDriverBind))
+	mux.HandleFunc("/api/recover", corsMiddleware(handleRecoverModem))
 	mux.HandleFunc("/api/autostart", corsMiddleware(handleAutoStart))
 	mux.HandleFunc("/api/logs", corsMiddleware(handleLogs))
 
@@ -859,37 +890,38 @@ func main() {
 	// Show startup notification so user knows it's running
 	notifyDesktop("SMS Forwarder 已启动", "访问 http://localhost:"+serverPort+" 或点击托盘图标")
 
-	// Auto-connect modem
+	// Auto-connect modem with retry (for slow USB init after boot/replug)
 	go func() {
 		time.Sleep(1 * time.Second)
 		fmt.Println("AUTO-CONNECT goroutine started")
-		cfg := GetConfig()
-		fmt.Printf("AUTO-CONNECT port config: %s\n", cfg.Serial.Port)
-		port := cfg.Serial.Port
-		if port == "auto" || port == "" {
-			fmt.Println("AUTO-CONNECT calling FindModemPort")
-			port = FindModemPort()
-			fmt.Printf("AUTO-CONNECT FindModemPort returned: %q\n", port)
+		for attempt := 1; attempt <= 10; attempt++ {
+			cfg := GetConfig()
+			port := cfg.Serial.Port
+			if port == "auto" || port == "" {
+				port = FindModemPort()
+			}
+			if port != "" {
+				baud := cfg.Serial.Baudrate
+				if baud == 0 {
+					baud = 115200
+				}
+				fmt.Printf("AUTO-CONNECT attempt %d: opening %s @ %d\n", attempt, port, baud)
+				if err := modem.Open(port, baud); err != nil {
+					fmt.Printf("AUTO-CONNECT Open FAILED: %v\n", err)
+				} else {
+					if err := modem.Init(); err != nil {
+						log.Printf("初始化警告: %v", err)
+					}
+					startPolling()
+					addLog("info", "已自动连接", port)
+					log.Printf("✅ 已连接 %s", port)
+					return
+				}
+			}
+			fmt.Printf("AUTO-CONNECT attempt %d: no port, retrying in %ds...\n", attempt, attempt*2)
+			time.Sleep(time.Duration(attempt*2) * time.Second)
 		}
-		if port == "" {
-			fmt.Println("AUTO-CONNECT no port found, skipping")
-			return
-		}
-		baud := cfg.Serial.Baudrate
-		if baud == 0 {
-			baud = 115200
-		}
-		fmt.Printf("AUTO-CONNECT opening %s @ %d\n", port, baud)
-		if err := modem.Open(port, baud); err != nil {
-			fmt.Printf("AUTO-CONNECT Open FAILED: %v\n", err)
-			return
-		}
-		if err := modem.Init(); err != nil {
-			log.Printf("初始化警告: %v", err)
-		}
-		startPolling()
-		addLog("info", "已自动连接", port)
-		log.Printf("✅ 已连接 %s", port)
+		fmt.Println("AUTO-CONNECT: all retries failed")
 	}()
 
 	// Open browser

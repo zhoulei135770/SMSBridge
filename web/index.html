@@ -12,7 +12,7 @@
         <nav class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h1><span class="logo-icon"></span>SMS Forwarder</h1>
-                <span class="version">v2.2</span>
+                <span class="version">v2.3</span>
             </div>
             <ul class="nav-list">
                 <li>
@@ -101,6 +101,11 @@
             <!-- Dashboard -->
             <section class="page active" id="page-dashboard">
                 <h2>仪表盘</h2>
+                <div id="recoverBanner" class="recover-banner" style="display:none">
+                    <span>⚠️ 模组未连接</span>
+                    <button class="btn btn-sm btn-warning" onclick="recoverModem()">🔧 恢复连接</button>
+                    <span style="font-size:12px;color:var(--text-muted)">（自动重置 USB 驱动并重新检测端口）</span>
+                </div>
                 <div class="status-cards" id="statusCards">
                     <div class="card">
                         <div class="card-title">状态</div>
@@ -310,6 +315,11 @@
                         <button class="btn btn-warning" onclick="bindDriver()">一键绑定 ML307A 驱动</button>
                     </div>
                 </div>
+                <div class="card">
+                    <h3>Windows 驱动提示</h3>
+                    <p style="color:var(--text-muted)">ML307A 在 Windows 上需要安装 USB 驱动才能识别串口。</p>
+                    <p style="color:var(--text-muted);font-size:13px">下载地址：<a href="https://github.com/viys/ML307A" target="_blank">github.com/viys/ML307A</a>（下载 CATStudio 包，内含 DrvInstaller.exe）</p>
+                    <p style="color:var(--text-muted);font-size:13px">或访问：<a href="https://wiki.luatos.com/pages/tools.html" target="_blank">wiki.luatos.com</a> 搜索 ML307A 驱动</p>
                 <div class="card">
                     <h3>设备信息</h3>
                     <div class="device-info-grid" id="deviceInfoGrid">

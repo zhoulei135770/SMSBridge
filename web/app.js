@@ -113,6 +113,12 @@ async function loadStatus() {
     cardOperator.textContent = data.operator || '-';
     cardNetwork.textContent = data.network || '-';
     cardIMEI.textContent = data.imei || '-';
+
+    // Show recovery banner if not connected
+    const banner = document.getElementById('recoverBanner');
+    if (banner) {
+        banner.style.display = data.running ? 'none' : '';
+    }
 }
 
 // ── SMS ─────────────────────────────────────────────────────────────────────
@@ -468,6 +474,22 @@ async function loadPlatformInfo() {
 async function bindDriver() {
     try { await apiPost('/driver/bind', {}); alert('驱动绑定成功！'); }
     catch (err) { alert('绑定失败: ' + err.message); }
+}
+
+async function recoverModem() {
+    if (!confirm('将重置 USB 设备并重新绑定驱动，可能需要 10 秒，确定继续？')) return;
+    const btn = document.querySelector('#recoverBanner .btn');
+    btn.disabled = true;
+    btn.textContent = '恢复中...';
+    try {
+        const result = await apiPost('/recover', {});
+        showToast('模组已恢复: ' + (result.port || 'OK'));
+        setTimeout(loadStatus, 3000);
+    } catch (err) {
+        alert('恢复失败: ' + err.message);
+    }
+    btn.disabled = false;
+    btn.textContent = '🔧 恢复连接';
 }
 
 // ── Autostart ───────────────────────────────────────────────────────────────

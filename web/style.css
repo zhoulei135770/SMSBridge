@@ -916,3 +916,17 @@ body {
 }
 .sms-item:hover .btn-delete-sms { opacity: 1; }
 .btn-delete-sms:hover { color: #f44336; background: rgba(244,67,54,0.1); }
+
+/* ── Recovery banner ─────────────────────────────────────────────────── */
+.recover-banner {
+    background: rgba(255,152,0,0.15);
+    border: 1px solid rgba(255,152,0,0.3);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.recover-banner .btn { flex-shrink: 0; }

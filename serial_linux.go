@@ -5,6 +5,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -144,4 +146,53 @@ func readChunk(f *os.File, buf []byte, deadline time.Time) (int, error) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+// ── USB Recovery for ML307A ─────────────────────────────────────────────────
+
+// RecoverML307A resets the USB device and rebinds drivers.
+func RecoverML307A() error {
+	// Find the USB device
+	vendorFile := "/sys/bus/usb/devices/*/idVendor"
+	matches, _ := filepath.Glob(vendorFile)
+	var devPath string
+	for _, p := range matches {
+		data, _ := os.ReadFile(p)
+		if strings.TrimSpace(string(data)) == "2ecc" {
+			dir := filepath.Dir(p)
+			prodData, _ := os.ReadFile(filepath.Join(dir, "idProduct"))
+			if strings.TrimSpace(string(prodData)) == "4d10" {
+				devPath = dir
+				break
+			}
+		}
+	}
+	if devPath == "" {
+		return fmt.Errorf("未找到 ML307A 设备")
+	}
+
+	// Get the bus-device identifier
+	devName := filepath.Base(devPath)
+	addLog("info", "正在恢复 ML307A 连接", devName)
+
+	// Step 1: Unbind from USB driver
+	unbindPath := "/sys/bus/usb/drivers/usb/unbind"
+	if _, err := os.Stat(unbindPath); err == nil {
+		os.WriteFile(unbindPath, []byte(devName+"\n"), 0644)
+		time.Sleep(2 * time.Second)
+	}
+
+	// Step 2: Rebind to USB driver
+	bindPath := "/sys/bus/usb/drivers/usb/bind"
+	if _, err := os.Stat(bindPath); err == nil {
+		os.WriteFile(bindPath, []byte(devName+"\n"), 0644)
+		time.Sleep(3 * time.Second)
+	}
+
+	// Step 3: Bind to option driver
+	BindML307ADriver()
+	time.Sleep(2 * time.Second)
+
+	addLog("info", "ML307A 驱动已重置", "正在重新检测串口...")
+	return nil
 }
