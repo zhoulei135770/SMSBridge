@@ -12,7 +12,7 @@
         <nav class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h1><span class="logo-icon"></span>SMS Forwarder</h1>
-                <span class="version">v2.0</span>
+                <span class="version">v2.2</span>
             </div>
             <ul class="nav-list">
                 <li>
@@ -73,6 +73,12 @@
                     <a href="#autostart" class="nav-item" data-page="autostart">
                         <span class="nav-icon nav-autostart"></span>
                         <span class="nav-text">自启动</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="#help" class="nav-item" data-page="help">
+                        <span class="nav-icon nav-help"></span>
+                        <span class="nav-text">帮助</span>
                     </a>
                 </li>
                 <li>
@@ -155,6 +161,14 @@
                                 <input type="checkbox" id="forwardLinksOnly" onchange="updateFilterOptions()"> 仅转发含链接的短信
                             </label>
                         </div>
+                        <div class="filter-mode-row">
+                            <label>转发模板:</label>
+                            <select id="forwardTemplate" onchange="updateFilterOptions()">
+                                <option value="default">默认（完整内容）</option>
+                                <option value="short">精简（提取验证码+截断）</option>
+                                <option value="code_only">仅验证码（纯数字）</option>
+                            </select>
+                        </div>
                         <div class="input-row">
                             <input type="text" id="keywordInput" placeholder="输入关键词">
                             <button class="btn btn-primary" onclick="addKeyword()">添加</button>
@@ -174,6 +188,7 @@
                             </select>
                             <input type="text" id="dingToken" placeholder="access_token" onchange="updateWebhookConfig()">
                             <input type="text" id="dingSecret" placeholder="secret (签名模式)" onchange="updateWebhookConfig()">
+                            <input type="text" id="dingKeyword" placeholder="自定义关键词（关键词模式）" style="display:none" onchange="updateWebhookConfig()">
                             <button class="btn btn-sm" onclick="testWebhook('dingtalk')">测试钉钉</button>
                         </div>
                         <div class="form-group">
@@ -324,7 +339,10 @@
                     <h3>串口设置</h3>
                     <div class="form-group">
                         <label>串口端口</label>
-                        <input type="text" id="cfgSerialPort" placeholder="auto 或 /dev/ttyUSB0">
+                        <select id="cfgSerialPort">
+                            <option value="auto">auto（自动检测）</option>
+                        </select>
+                        <button class="btn btn-sm" onclick="refreshSerialPorts()" style="margin-top:4px">🔍 扫描可用端口</button>
                     </div>
                     <div class="form-group">
                         <label>波特率</label>
@@ -344,6 +362,96 @@
                         <div class="platform-info" id="autostartPlatform"></div>
                     </div>
                     <button class="btn btn-primary" id="autostartToggle" onclick="toggleAutostart()">切换</button>
+                </div>
+            </section>
+
+            <!-- Help -->
+            <section class="page" id="page-help">
+                <h2>帮助</h2>
+                <div class="card">
+                    <h3>📡 仪表盘</h3>
+                    <p>显示 ML307A 模块的实时状态：信号强度、运营商、网络状态、IMEI、短信总数。</p>
+                    <p>自动每 5 秒刷新，绿灯表示运行中，黄灯表示已连接(未轮询)，红灯表示未连接。</p>
+                </div>
+                <div class="card">
+                    <h3>📤 验证码转发</h3>
+                    <p><b>过滤模式：</b></p>
+                    <ul>
+                        <li><b>白名单</b>：只转发含有关键词的短信</li>
+                        <li><b>黑名单</b>：排除含有关键词的短信，其余全部转发</li>
+                        <li><b>全部转发</b>：不筛选，所有短信都转发</li>
+                    </ul>
+                    <p><b>转发模板：</b></p>
+                    <ul>
+                        <li><b>默认</b>：发送方号码 + 时间 + 完整内容(200字)</li>
+                        <li><b>精简</b>：自动提取验证码，如 "【1069xxx】验证码: 123456"</li>
+                        <li><b>仅验证码</b>：只发纯数字验证码，如 "【1069xxx】123456"</li>
+                    </ul>
+                    <p><b>Webhook 配置：</b>支持钉钉机器人（关键词模式 / 签名模式）和企业微信机器人。</p>
+                    <p>钉钉关键词模式需要在机器人和应用内设置相同的关键词（默认为"短信"）。</p>
+                </div>
+                <div class="card">
+                    <h3>💬 短信记录</h3>
+                    <p>展示所有接收到的短信，支持搜索。鼠标悬停可看到删除按钮(×)，点击可删除该条短信。</p>
+                    <p>时间戳格式为 ISO 8601，转换为本地时间显示（刚刚/分钟前/小时前/完整日期）。</p>
+                </div>
+                <div class="card">
+                    <h3>✉️ 发送短信</h3>
+                    <p>通过 ML307A 模块发送短信。输入手机号码和短信内容，点击发送。</p>
+                    <p>字符计数右侧显示当前已输入字符数/70（单条短信最大长度）。</p>
+                </div>
+                <div class="card">
+                    <h3>📞 拨号盘</h3>
+                    <p>通过 ML307A 模块拨打电话。输入号码后点击"拨打"，通话记录会自动保存。</p>
+                    <p>点击"挂断"结束当前通话。每次拨打后会显示上次拨打记录。</p>
+                </div>
+                <div class="card">
+                    <h3>📋 通话记录</h3>
+                    <p>显示最近 50 条通话记录，包括拨打时间、号码、通话类型（↑拨出）。</p>
+                    <p>记录存储在内存中，重启服务后清空。</p>
+                </div>
+                <div class="card">
+                    <h3>📖 电话本</h3>
+                    <p>ML307A 模块 SIM 卡电话本管理。可查看、添加联系人。</p>
+                    <p>添加时填写姓名和电话号码，点击"添加"即可存入模块。</p>
+                </div>
+                <div class="card">
+                    <h3>🔧 设备诊断</h3>
+                    <p><b>平台信息：</b>当前运行的操作系统和架构。</p>
+                    <p><b>驱动绑定：</b>(仅 Linux) 一键绑定 ML307A USB 驱动，使模块被正确识别。</p>
+                    <p><b>设备信息：</b>信号、网络、IMEI、运营商、SIM 卡 IMSI、模块时间。</p>
+                </div>
+                <div class="card">
+                    <h3>⚙️ 设置</h3>
+                    <p><b>配置管理：</b>导出/导入 JSON 配置文件，或重置为默认值。</p>
+                    <p><b>串口设置：</b>设置 ML307A 的串口端口（默认为 auto，自动检测）和波特率（默认 115200）。</p>
+                    <p><b>轮询间隔：</b>短信检测间隔，默认 1 秒。值越小转发越快，但对模块压力越大。</p>
+                </div>
+                <div class="card">
+                    <h3>🚀 自启动</h3>
+                    <p>设置开机自动启动短信转发器。</p>
+                    <ul>
+                        <li><b>Linux：</b>创建 XDG Autostart .desktop 文件</li>
+                        <li><b>macOS：</b>创建 LaunchAgent plist 文件</li>
+                        <li><b>Windows：</b>写入注册表 Run 键</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>🖥️ 系统托盘</h3>
+                    <p>右键/左键点击右下角绿色气泡图标：</p>
+                    <ul>
+                        <li><b>打开主界面：</b>浏览器打开管理页面</li>
+                        <li><b>开机自启动：</b>勾选后开机自动运行</li>
+                        <li><b>重启应用：</b>结束所有进程并重新启动</li>
+                        <li><b>退出程序：</b>关闭短信转发器</li>
+                    </ul>
+                    <p>双击可执行文件：如服务已在运行则打开浏览器，否则启动服务。</p>
+                    <p>（macOS/Windows 需原生 CGO 编译才有托盘）</p>
+                </div>
+                <div class="card">
+                    <h3>📝 日志</h3>
+                    <p>显示最近的系统日志（最多 500 条），包括连接、短信过滤/转发、错误等信息。</p>
+                    <p>每 3 秒自动刷新。</p>
                 </div>
             </section>
 

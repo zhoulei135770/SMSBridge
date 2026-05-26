@@ -176,3 +176,42 @@ func isWindowsAutostart() bool {
 		"/v", "SMSForwarder")
 	return cmd.Run() == nil
 }
+
+// ── Restart ─────────────────────────────────────────────────────────────────
+
+func restartApp() {
+	// Fork a shell that waits for us to die, then starts a new instance.
+	// We can't start the new instance from here because pkill would kill us first.
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+
+	switch runtime.GOOS {
+	case "linux", "darwin":
+		// Use anchored regex to avoid killing the shell script itself
+		// (process name is truncated to 15 chars in Linux)
+		cmd := exec.Command("sh", "-c",
+			fmt.Sprintf("sleep 1 && pkill -f '^.*%s$' 2>/dev/null; sleep 0.5 && nohup '%s' >/dev/null 2>&1 &",
+				filepath.Base(exe), exe))
+		cmd.Start()
+	case "windows":
+		cmd := exec.Command("cmd", "/c",
+			fmt.Sprintf("timeout /t 1 >nul && taskkill /F /IM %s 2>nul & timeout /t 1 >nul && start \"\" \"%s\"",
+				filepath.Base(exe), exe))
+		cmd.Start()
+	}
+
+	// Exit current process - the forked shell will handle the restart
+	os.Exit(0)
+}
+
+func killAllInstances() {
+	self := filepath.Base(os.Args[0])
+	switch runtime.GOOS {
+	case "linux", "darwin":
+		exec.Command("pkill", "-f", "^.*"+self+"$").Run()
+	case "windows":
+		exec.Command("taskkill", "/F", "/IM", self).Run()
+	}
+}

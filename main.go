@@ -222,6 +222,43 @@ func handleSMSSend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "sent"})
 }
 
+// POST /api/sms/delete
+func handleSMSDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeJSON(w, map[string]string{"error": "method not allowed"})
+		return
+	}
+	var req struct {
+		Index int    `json:"index"`
+		Phone string `json:"phone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	// Delete from modem
+	if req.Index > 0 {
+		modem.DeleteSMS(req.Index)
+	}
+	// Remove from in-memory history
+	historyMu.Lock()
+	var filtered []HistoryEntry
+	for _, e := range smsHistory {
+		if e.Phone != req.Phone && req.Index == 0 {
+			filtered = append(filtered, e)
+		} else if req.Index > 0 {
+			filtered = append(filtered, e)
+		}
+	}
+	// Simple approach: remove by phone if no index, or keep all if index was given (modem handles it)
+	if req.Phone != "" && req.Index == 0 {
+		smsHistory = filtered
+	}
+	historyMu.Unlock()
+	addLog("info", "短信已删除", req.Phone)
+	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
 // GET/POST /api/config
 func handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -640,7 +677,7 @@ func pollOnce(cfg Config) {
 		return
 	}
 
-	msgs, err := modem.ReadSMS()
+	msgs, err := modem.ReadNewSMS()
 	if err != nil {
 		return // Silent failure, retry next cycle
 	}
@@ -656,9 +693,9 @@ func pollOnce(cfg Config) {
 		smsTotalCount++
 		seenMu.Unlock()
 
-		// Add to history
+		// Add to history (convert SMS time to ISO format)
 		entry := HistoryEntry{
-			Timestamp: msg.Time,
+			Timestamp: parseSMSTime(msg.Time),
 			Phone:     msg.From,
 			Content:   cleanSMSBody(msg.Body),
 		}
@@ -700,6 +737,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/stop", corsMiddleware(handleStop))
 	mux.HandleFunc("/api/sms", corsMiddleware(handleSMS))
 	mux.HandleFunc("/api/sms/send", corsMiddleware(handleSMSSend))
+	mux.HandleFunc("/api/sms/delete", corsMiddleware(handleSMSDelete))
 	mux.HandleFunc("/api/config", corsMiddleware(handleConfig))
 	mux.HandleFunc("/api/config/import", corsMiddleware(handleConfigImport))
 	mux.HandleFunc("/api/config/export", corsMiddleware(handleConfigExport))
@@ -724,17 +762,46 @@ func setupRoutes(mux *http.ServeMux) {
 	webSub, _ := fs.Sub(webFS, "web")
 	fileServer := http.FileServer(http.FS(webSub))
 
-	mux.HandleFunc("/web/", func(w http.ResponseWriter, r *http.Request) {
+	// noCache middleware for embedded web files
+	noCache := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+			next(w, r)
+		}
+	}
+
+	mux.HandleFunc("/web/", noCache(func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, "/web")
 		fileServer.ServeHTTP(w, r)
-	})
+	}))
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/", noCache(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		if path == "/" || path == "/index.html" {
 			data, _ := webFS.ReadFile("web/index.html")
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write(data)
+			// Inject initial status data so the page shows real data immediately
+			html := string(data)
+			html = strings.Replace(html, "</head>",
+				"<script>window.__INIT__="+mustMarshal(getInitialStatus())+"</script></head>", 1)
+			// Also replace default "-" placeholders with real data (works even without JS)
+			status := getInitialStatus()
+			html = strings.Replace(html, `id="cardOperator">-`, fmt.Sprintf(`id="cardOperator">%s`, status["operator"]), 1)
+			html = strings.Replace(html, `id="cardNetwork">-`, fmt.Sprintf(`id="cardNetwork">%s`, status["network"]), 1)
+			html = strings.Replace(html, `id="cardIMEI">-`, fmt.Sprintf(`id="cardIMEI">%s`, status["imei"]), 1)
+			if s, ok := status["signal"].(int); ok && s > 0 {
+				html = strings.Replace(html, `width:0%">`, fmt.Sprintf(`width:%d%%">`, s*100/31), 1)
+				html = strings.Replace(html, `class="signal-text">-`, fmt.Sprintf(`class="signal-text">%d/31`, s), 1)
+			}
+			if running, ok := status["running"].(bool); ok && running {
+				html = strings.Replace(html, `id="cardStatus">未连接`, `id="cardStatus">`+
+					`<span class="status-led led-green"></span> 运行中`, 1)
+				html = strings.Replace(html, `class="dot offline"`, `class="dot online"`, 1)
+				html = strings.Replace(html, `id="statusText">未连接`, `id="statusText">已连接`, 1)
+			}
+			w.Write([]byte(html))
 			return
 		}
 		data, err := webFS.ReadFile("web" + path)
@@ -750,7 +817,7 @@ func setupRoutes(mux *http.ServeMux) {
 			return
 		}
 		fileServer.ServeHTTP(w, r)
-	})
+	}))
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -855,6 +922,66 @@ func isAddrInUse(err error) bool {
 }
 
 // notifyDesktop shows a desktop notification (cross-platform).
+// parseSMSTime converts modem SMS timestamp to ISO 8601.
+// Input format: "YY/MM/DD,HH:MM:SS+ZZ" where ZZ is quarter-hour offset.
+// getInitialStatus returns current modem status for pre-populating the dashboard.
+func getInitialStatus() map[string]interface{} {
+	signal, operator, imei, network := 0, "", "", ""
+	if modem.IsOpenNonBlocking() {
+		if s, err := modem.GetSignal(); err == nil {
+			signal = s
+		}
+		if i, err := modem.GetIMEI(); err == nil {
+			imei = i
+		}
+		if o, err := modem.GetOperator(); err == nil {
+			operator = o
+		}
+		if n, err := modem.GetNetwork(); err == nil {
+			network = n
+		}
+	}
+	runningMu.RLock()
+	isRunning := running
+	runningMu.RUnlock()
+	return map[string]interface{}{
+		"running":  isRunning,
+		"polling":  isRunning,
+		"signal":   signal,
+		"imei":     imei,
+		"operator": operator,
+		"network":  network,
+		"port":     serverPort,
+	}
+}
+
+func mustMarshal(v interface{}) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+func parseSMSTime(raw string) string {
+	if raw == "" {
+		return time.Now().Format("2006-01-02T15:04:05+08:00")
+	}
+	// Parse: YY/MM/DD,HH:MM:SS+TZ
+	var yy, mm, dd, hh, mi, ss, tz int
+	_, err := fmt.Sscanf(raw, "%d/%d/%d,%d:%d:%d+%d", &yy, &mm, &dd, &hh, &mi, &ss, &tz)
+	if err != nil {
+		// Try without timezone
+		_, err = fmt.Sscanf(raw, "%d/%d/%d,%d:%d:%d", &yy, &mm, &dd, &hh, &mi, &ss)
+		if err != nil {
+			return raw // Return as-is if unparseable
+		}
+		tz = 32 // Default to +8:00 (China)
+	}
+	// +tz is quarter hours, e.g., +32 = +8:00
+	tzHours := tz / 4
+	tzMins := (tz % 4) * 15
+	tzOffset := fmt.Sprintf("%+03d:%02d", tzHours, tzMins)
+	return fmt.Sprintf("20%02d-%02d-%02dT%02d:%02d:%02d%s", yy, mm, dd, hh, mi, ss, tzOffset)
+}
+
 func notifyDesktop(title, body string) {
 	switch runtime.GOOS {
 	case "linux":

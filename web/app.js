@@ -77,8 +77,12 @@ async function apiPost(path, data) {
 // ── Status / Dashboard ──────────────────────────────────────────────────────
 
 async function loadStatus() {
-    const data = await apiGet('/status');
-    if (!data) return;
+    // Use server-injected initial data for instant display
+    let data = window.__INIT__;
+    if (!data) {
+        data = await apiGet('/status');
+        if (!data) return;
+    }
 
     const dot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
@@ -140,6 +144,7 @@ function renderSMSList(containerId, messages) {
                 <span class="sms-time">${formatTime(msg.timestamp)}</span>
             </div>
             <div class="sms-content">${escHtml(msg.content||'')}</div>
+            <button class="btn-delete-sms" onclick="deleteSMS('${escAttr(msg.phone)}')" title="删除">&times;</button>
         </div>
     `).join('');
 }
@@ -151,6 +156,16 @@ function filterSMS() {
         const content = item.dataset.content?.toLowerCase() || '';
         item.style.display = (phone.includes(search) || content.includes(search)) ? '' : 'none';
     });
+}
+
+async function deleteSMS(phone) {
+    if (!confirm('确定删除来自 ' + phone + ' 的短信？')) return;
+    try {
+        await apiPost('/sms/delete', { phone, index: 0 });
+        showToast('已删除');
+        loadSMS();
+        refreshRecentSMS();
+    } catch (err) { alert('删除失败: ' + err.message); }
 }
 
 async function sendSMS() {
@@ -206,10 +221,13 @@ async function loadConfig() {
     document.getElementById('filterMode').value = data.filter?.mode || 'whitelist';
     document.getElementById('forwardLinks').checked = data.filter?.forward_links || false;
     document.getElementById('forwardLinksOnly').checked = data.filter?.forward_links_only || false;
+    document.getElementById('forwardTemplate').value = data.filter?.forward_template || 'default';
     document.getElementById('dingEnabled').checked = data.dingtalk?.enabled || false;
     document.getElementById('dingMode').value = data.dingtalk?.mode || 'keyword';
     document.getElementById('dingToken').value = data.dingtalk?.token || '';
     document.getElementById('dingSecret').value = data.dingtalk?.secret || '';
+    document.getElementById('dingKeyword').value = data.dingtalk?.keyword || '短信';
+    toggleDingKeyword(data.dingtalk?.mode || 'keyword');
     document.getElementById('wechatEnabled').checked = data.wechat?.enabled || false;
     document.getElementById('wechatKey').value = data.wechat?.key || '';
 }
@@ -217,10 +235,51 @@ async function loadConfig() {
 function loadConfigToForm() {
     apiGet('/config').then(data => {
         if (!data) return;
-        document.getElementById('cfgSerialPort').value = data.serial?.port || 'auto';
+        const portEl = document.getElementById('cfgSerialPort');
+        const savedPort = data.serial?.port || 'auto';
+        // Ensure the saved port is in the options
+        let found = false;
+        for (const opt of portEl.options) {
+            if (opt.value === savedPort) { found = true; break; }
+        }
+        if (!found) {
+            portEl.appendChild(new Option(savedPort, savedPort));
+        }
+        portEl.value = savedPort;
         document.getElementById('cfgBaudrate').value = data.serial?.baudrate || 115200;
-        document.getElementById('cfgPolling').value = data.polling_sec || 2;
+        document.getElementById('cfgPolling').value = data.polling_sec || 1;
     });
+    // Scan for available ports
+    refreshSerialPorts();
+}
+
+async function refreshSerialPorts() {
+    const data = await apiGet('/devices');
+    if (!data || !data.available_ports) return;
+    const portEl = document.getElementById('cfgSerialPort');
+    const current = portEl.value;
+    // Rebuild options
+    portEl.innerHTML = '<option value="auto">auto（自动检测）</option>';
+    for (const p of data.available_ports) {
+        portEl.appendChild(new Option(p, p));
+    }
+    // Restore current selection
+    portEl.value = current || 'auto';
+}
+
+async function saveSerialConfig() {
+    const config = {
+        serial: {
+            port: document.getElementById('cfgSerialPort').value || 'auto',
+            baudrate: parseInt(document.getElementById('cfgBaudrate').value) || 115200
+        }
+    };
+    const current = await apiGet('/config');
+    if (current) {
+        Object.assign(current, config);
+        await apiPost('/config', current);
+        showToast('串口设置已保存，需重启应用生效');
+    }
 }
 
 async function saveAllSettings() {
@@ -241,6 +300,7 @@ async function updateFilterOptions() {
     const current = await apiGet('/config');
     if (current) { current.filter.forward_links = document.getElementById('forwardLinks').checked;
                    current.filter.forward_links_only = document.getElementById('forwardLinksOnly').checked;
+                   current.filter.forward_template = document.getElementById('forwardTemplate').value;
                    await apiPost('/config', current); }
 }
 async function updateWebhookConfig() {
@@ -250,6 +310,7 @@ async function updateWebhookConfig() {
         current.dingtalk.mode = document.getElementById('dingMode').value;
         current.dingtalk.token = document.getElementById('dingToken').value.trim();
         current.dingtalk.secret = document.getElementById('dingSecret').value.trim();
+        current.dingtalk.keyword = document.getElementById('dingKeyword').value.trim() || '短信';
         current.wechat.enabled = document.getElementById('wechatEnabled').checked;
         current.wechat.key = document.getElementById('wechatKey').value.trim();
         await apiPost('/config', current);
@@ -280,6 +341,26 @@ async function resetConfig() {
     try { await apiPost('/config/reset', {}); showToast('配置已重置'); loadConfig(); loadKeywords(); }
     catch (err) { alert('重置失败: ' + err.message); }
 }
+function toggleDingKeyword(mode) {
+    const kw = document.getElementById('dingKeyword');
+    kw.style.display = (mode === 'keyword') ? '' : 'none';
+}
+// Hook dingMode change to toggle keyword visibility
+document.addEventListener('DOMContentLoaded', () => {
+    const dingMode = document.getElementById('dingMode');
+    if (dingMode) {
+        dingMode.addEventListener('change', function() {
+            toggleDingKeyword(this.value);
+        });
+        // Also listen via onchange attribute
+        const origOnChange = dingMode.onchange;
+        dingMode.onchange = function(e) {
+            toggleDingKeyword(this.value);
+            if (typeof origOnChange === 'function') origOnChange.call(this, e);
+        };
+    }
+});
+
 async function testWebhook(platform) {
     try { await apiPost('/webhook/test', { platform }); showToast('测试消息已发送'); }
     catch (err) { alert('测试失败: ' + err.message); }

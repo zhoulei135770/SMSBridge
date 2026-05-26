@@ -74,8 +74,8 @@ func SendDingtalk(cfg DingtalkConfig, title, content string) error {
 
 	// Retry up to 3 times with backoff
 	var lastErr error
-	for i := 0; i < 3; i++ {
-		client := &http.Client{Timeout: 8 * time.Second}
+	for i := 0; i < 2; i++ {
+		client := &http.Client{Timeout: 5 * time.Second}
 		resp, err := client.Post(webhookURL, "application/json", bytes.NewReader(data))
 		if err != nil {
 			lastErr = fmt.Errorf("dingtalk request: %w", err)
@@ -142,8 +142,8 @@ func SendWechat(cfg WechatConfig, content string) error {
 	}
 
 	var lastErr error
-	for i := 0; i < 3; i++ {
-		client := &http.Client{Timeout: 8 * time.Second}
+	for i := 0; i < 2; i++ {
+		client := &http.Client{Timeout: 5 * time.Second}
 		resp, err := client.Post(webhookURL, "application/json", bytes.NewReader(data))
 		if err != nil {
 			lastErr = fmt.Errorf("wechat request: %w", err)
@@ -252,45 +252,84 @@ func ForwardSMS(cfg Config, from, body, timeStr string) []error {
 }
 
 func buildForwardContent(cfg Config, from, body, timeStr string) string {
-	var parts []string
-
 	// Links only mode
 	if cfg.Filter.ForwardLinksOnly {
 		links := ExtractLinks(body)
 		if len(links) > 0 {
-			parts = append(parts, "> 来自: "+from)
-			if timeStr != "" {
-				parts = append(parts, "> 时间: "+timeStr)
-			}
-			parts = append(parts, "> 链接:")
+			parts := []string{"> " + from, "> " + timeStr, "> 链接:", ""}
 			for _, link := range links {
-				parts = append(parts, "> ["+link+"]("+link+")")
+				parts = append(parts, "> "+link)
 			}
+			return strings.Join(parts, "\n")
 		}
-		return strings.Join(parts, "\n")
+		return ""
 	}
 
-	// Normal forwarding
-	parts = append(parts, "> 来自: **"+from+"**")
-	if timeStr != "" {
-		parts = append(parts, "> 时间: "+timeStr)
+	// Verification code extraction mode
+	if cfg.Filter.ForwardTemplate == "code_only" {
+		code := extractVerificationCode(body)
+		if code != "" {
+			return fmt.Sprintf("【%s】%s", from, code)
+		}
+		// Fallback: just show sender
+		return "> " + from + "\n> " + body
 	}
-	parts = append(parts, "> ---")
-	parts = append(parts, "> "+body)
 
-	// Append links if enabled
+	// Short mode: compact single line
+	if cfg.Filter.ForwardTemplate == "short" {
+		code := extractVerificationCode(body)
+		if code != "" {
+			return fmt.Sprintf("【%s】验证码: %s", from, code)
+		}
+		return fmt.Sprintf("【%s】%s", from, truncate(body, 60))
+	}
+
+	// Default mode: clean format
+	parts := []string{
+		"**【" + from + "】** " + timeStr,
+		"",
+		truncate(body, 200),
+	}
+
+	// Append links
 	if cfg.Filter.ForwardLinks {
 		links := ExtractLinks(body)
 		if len(links) > 0 {
-			parts = append(parts, "> ---")
-			parts = append(parts, "> 链接:")
+			parts = append(parts, "")
 			for _, link := range links {
-				parts = append(parts, "> ["+link+"]("+link+")")
+				parts = append(parts, link)
 			}
 		}
 	}
 
 	return strings.Join(parts, "\n")
+}
+
+// extractVerificationCode tries to find a verification code in the SMS body.
+func extractVerificationCode(body string) string {
+	// Common patterns in Chinese verification SMS
+	patterns := []string{
+		`验证码[：:]*\s*(\d{4,8})`,
+		`验证码[是为：:]*\s*(\d{4,8})`,
+		`code[：:]*\s*(\d{4,8})`,
+		`\b(\d{4,8})\s*[是为].*验证码`,
+		`(\d{4,8})[^\d]*$`,
+	}
+	for _, p := range patterns {
+		re := regexp.MustCompile(p)
+		if m := re.FindStringSubmatch(body); len(m) > 1 {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "..."
 }
 
 // ── Webhook Test ─────────────────────────────────────────────────────────────

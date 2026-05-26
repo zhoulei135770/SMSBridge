@@ -146,6 +146,8 @@ body {
 .nav-settings       { border: 2px solid #607d8b; border-radius: 50%; }
 .nav-settings::after { content: ''; position: absolute; width: 6px; height: 6px; background: #607d8b; border-radius: 50%; top: 4px; left: 4px; }
 .nav-autostart      { background: #8bc34a; clip-path: polygon(30% 0, 30% 100%, 100% 50%); }
+.nav-help           { border: 2px solid #00bcd4; border-radius: 50%; text-align: center; line-height: 14px; font-size: 12px; color: #00bcd4; font-weight: bold; }
+.nav-help::after    { content: '?'; position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
 .nav-logs           { background: #795548; }
 .nav-logs::after    { content: ''; position: absolute; width: 10px; height: 2px; background: rgba(255,255,255,0.6); top: 5px; left: 4px; box-shadow: 0 4px 0 rgba(255,255,255,0.6); }
 
@@ -474,6 +476,7 @@ body {
     padding: 12px;
     border-bottom: 1px solid var(--border);
     transition: background var(--transition);
+    position: relative;
 }
 
 .sms-item:hover {
@@ -891,3 +894,25 @@ body {
     margin-top: 8px;
     text-align: center;
 }
+
+/* ── Delete SMS button ──────────────────────────────────────────────── */
+.btn-delete-sms {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 18px;
+    cursor: pointer;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s, color 0.2s, background 0.2s;
+}
+.sms-item:hover .btn-delete-sms { opacity: 1; }
+.btn-delete-sms:hover { color: #f44336; background: rgba(244,67,54,0.1); }

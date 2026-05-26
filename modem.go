@@ -207,20 +207,31 @@ func (m *Modem) GetSignal() (int, error) {
 }
 
 func (m *Modem) GetIMEI() (string, error) {
-	resp, err := m.atCommand("AT+CGSN")
-	if err != nil {
-		return "", err
-	}
-	lines := strings.Split(resp, "\r\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" && line != "OK" && !strings.HasPrefix(line, "AT+") {
-			if len(line) >= 14 && isDigits(line) {
-				return line, nil
+	// Try AT+CGSN first, then AT+GSN as fallback
+	for _, cmd := range []string{"AT+CGSN", "AT+GSN"} {
+		resp, err := m.atCommand(cmd)
+		if err != nil {
+			continue
+		}
+		// ML307A may return IMEI on a single line or with extra whitespace
+		for _, line := range strings.Split(resp, "\r\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || line == "OK" || strings.HasPrefix(line, "AT+") {
+				continue
+			}
+			// Strip any non-digit characters and check length
+			digits := strings.Map(func(r rune) rune {
+				if r >= '0' && r <= '9' {
+					return r
+				}
+				return -1
+			}, line)
+			if len(digits) >= 14 {
+				return digits, nil
 			}
 		}
 	}
-	return "", fmt.Errorf("IMEI parse error: %s", resp)
+	return "", fmt.Errorf("IMEI not found")
 }
 
 func (m *Modem) GetIMSI() (string, error) {
@@ -330,6 +341,15 @@ func (m *Modem) ReadSMS() ([]SMSMessage, error) {
 	return parseCMGL(resp), nil
 }
 
+// ReadNewSMS reads only unread SMS (faster for polling).
+func (m *Modem) ReadNewSMS() ([]SMSMessage, error) {
+	resp, err := m.atCommand("AT+CMGL=\"REC UNREAD\"")
+	if err != nil {
+		return nil, err
+	}
+	return parseCMGL(resp), nil
+}
+
 func (m *Modem) DeleteSMS(index int) error {
 	_, err := m.atCommand(fmt.Sprintf("AT+CMGD=%d", index))
 	return err
@@ -342,8 +362,8 @@ func (m *Modem) SendSMS(number, content string) error {
 		return fmt.Errorf("modem not open")
 	}
 
-	// Ensure text mode
-	sendATLocked(m.sp, "AT+CMGF=1", 500*time.Millisecond)
+	// Ensure text mode (use SendAT for proper locking)
+	SendAT(m.sp, "AT+CMGF=1", 500*time.Millisecond)
 
 	drain(m.sp)
 

@@ -117,6 +117,9 @@ func runSystray(onQuit func()) {
 		mAutoStart := systray.AddMenuItemCheckbox("开机自启动", "开机自动启动短信转发器", autoEnabled)
 		systray.AddSeparator()
 
+		mRestart := systray.AddMenuItem("重启应用", "结束所有进程并重新启动")
+		systray.AddSeparator()
+
 		mQuit := systray.AddMenuItem("退出程序", "退出 SMS Forwarder")
 
 		go func() {
@@ -138,6 +141,8 @@ func runSystray(onQuit func()) {
 							mAutoStart.Check()
 						}
 					}
+				case <-mRestart.ClickedCh:
+					restartApp()
 				case <-mQuit.ClickedCh:
 					systray.Quit()
 					return

@@ -33,6 +33,7 @@ type FilterConfig struct {
 	Keywords         []string `json:"keywords"`           // 关键词列表
 	ForwardLinks     bool     `json:"forward_links"`      // 提取并转发链接
 	ForwardLinksOnly bool     `json:"forward_links_only"` // 仅转发链接
+	ForwardTemplate  string   `json:"forward_template"`    // "default","short","code_only"
 }
 
 type Config struct {
@@ -69,8 +70,9 @@ func DefaultConfig() Config {
 			Keywords:         []string{"验证码"},
 			ForwardLinks:     true,
 			ForwardLinksOnly: false,
+		ForwardTemplate:  "default",
 		},
-		PollingSec: 2,
+		PollingSec: 1,
 		AutoStart:  false,
 		Theme:      "dark",
 	}
