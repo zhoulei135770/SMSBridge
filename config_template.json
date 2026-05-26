@@ -1,0 +1,27 @@
+{
+  "_comment": "首次运行会自动生成。将此文件复制为 ~/.config/sms-bridge/config.json 并填入你的 Webhook 信息",
+  "serial": {
+    "port": "auto",
+    "baudrate": 115200
+  },
+  "dingtalk": {
+    "enabled": false,
+    "mode": "keyword",
+    "token": "你的钉钉机器人 Access Token",
+    "keyword": "短信",
+    "secret": ""
+  },
+  "wechat": {
+    "enabled": false,
+    "key": "你的企业微信机器人 Webhook Key"
+  },
+  "filter": {
+    "mode": "whitelist",
+    "keywords": ["验证码"],
+    "forward_links": true,
+    "forward_links_only": false
+  },
+  "polling_sec": 2,
+  "auto_start": false,
+  "theme": "dark"
+}
