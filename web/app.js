@@ -43,13 +43,13 @@ function navigateTo(page) {
     if (target) target.classList.add('active');
     window.location.hash = page;
     switch (page) {
-        case 'dashboard': loadStatus(); refreshRecentSMS(); break;
+        case 'dashboard': loadStatus(); refreshRecentSMS(); loadSMSUsage(); break;
         case 'forward': loadKeywords(); loadForwardLogs(); break;
-        case 'sms': loadSMS(); break;
+        case 'sms': loadSMS(); loadSMSUsage(); break;
         case 'calls': loadCalls(); break;
         case 'phonebook': loadPhonebook(); break;
         case 'diagnostics': refreshDevices(); loadPlatformInfo(); break;
-        case 'settings': loadConfigToForm(); break;
+        case 'settings': loadConfigToForm(); loadAutoCleanConfig(); break;
         case 'autostart': loadAutostartStatus(); break;
         case 'logs': loadLogs(); break;
     }
@@ -92,12 +92,16 @@ async function loadStatus() {
     const cardNetwork = document.getElementById('cardNetwork');
     const cardIMEI = document.getElementById('cardIMEI');
 
-    if (data.running) {
+    if (data.running && data.connected !== false) {
         dot.innerHTML = '<span class="dot online"></span>';
         statusText.textContent = '已连接';
         cardStatus.innerHTML = data.polling
             ? '<span class="status-led led-green"></span> 运行中'
             : '<span class="status-led led-yellow"></span> 已连接';
+    } else if (data.running && data.connected === false) {
+        dot.innerHTML = '<span class="dot offline"></span>';
+        statusText.textContent = '模组断开';
+        cardStatus.innerHTML = '<span class="status-led led-red"></span> 模组断开';
     } else {
         dot.innerHTML = '<span class="dot offline"></span>';
         statusText.textContent = '未连接';
@@ -114,10 +118,10 @@ async function loadStatus() {
     cardNetwork.textContent = data.network || '-';
     cardIMEI.textContent = data.imei || '-';
 
-    // Show recovery banner if not connected
+    // Show recovery banner if not connected or modem disconnected
     const banner = document.getElementById('recoverBanner');
     if (banner) {
-        banner.style.display = data.running ? 'none' : '';
+        banner.style.display = (!data.running || data.connected === false) ? '' : 'none';
     }
 }
 
@@ -171,7 +175,81 @@ async function deleteSMS(phone) {
         showToast('已删除');
         loadSMS();
         refreshRecentSMS();
+        loadSMSUsage();
     } catch (err) { alert('删除失败: ' + err.message); }
+}
+
+// ── Batch Clear ─────────────────────────────────────────────────────────────
+
+async function clearAllSMS() {
+    const usage = await apiGet('/sms/usage');
+    const count = usage?.used || '?';
+    if (!confirm(`确定清空模块中全部 ${count} 条短信？\n此操作不可恢复！`)) return;
+    try {
+        const result = await apiPost('/sms/clear', {});
+        showToast(`已清空 ${result.deleted || 0} 条短信`);
+        loadSMS();
+        refreshRecentSMS();
+        loadSMSUsage();
+    } catch (err) { alert('清空失败: ' + err.message); }
+}
+
+// ── SMS Storage Usage ───────────────────────────────────────────────────────
+
+async function loadSMSUsage() {
+    const data = await apiGet('/sms/usage');
+    if (!data) return;
+    const used = data.used || 0;
+    const total = data.total || 180;
+    const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+    
+    const el = document.getElementById('storageUsed');
+    if (el) el.textContent = used;
+    const totalEl = document.getElementById('storageTotal');
+    if (totalEl) totalEl.textContent = total;
+    const pctEl = document.getElementById('storagePct');
+    if (pctEl) {
+        pctEl.textContent = `${pct}%`;
+        pctEl.style.color = pct > 80 ? 'var(--danger)' : pct > 60 ? 'var(--warning)' : 'var(--text-muted)';
+    }
+    const fillEl = document.getElementById('storageBarFill');
+    if (fillEl) {
+        fillEl.style.width = `${pct}%`;
+        fillEl.style.background = pct > 80 ? 'var(--danger)' : pct > 60 ? 'var(--warning)' : 'var(--accent)';
+    }
+    // Also update dashboard card
+    const countEl = document.getElementById('cardSMSCount');
+    if (countEl) countEl.textContent = `${used}/${total}`;
+}
+
+// ── Auto Cleanup Config ─────────────────────────────────────────────────────
+
+function loadAutoCleanConfig() {
+    apiGet('/config').then(data => {
+        if (!data) return;
+        const ac = data.auto_cleanup || {};
+        document.getElementById('cfgAutoCleanEnabled').checked = ac.enabled !== false;
+        document.getElementById('cfgAutoCleanThreshold').value = ac.threshold || 160;
+        updateAutoCleanUI();
+    });
+}
+
+function updateAutoCleanUI() {
+    const enabled = document.getElementById('cfgAutoCleanEnabled').checked;
+    document.getElementById('cfgAutoCleanThreshold').disabled = !enabled;
+}
+
+async function saveAutoCleanConfig() {
+    const current = await apiGet('/config');
+    if (!current) return;
+    current.auto_cleanup = {
+        enabled: document.getElementById('cfgAutoCleanEnabled').checked,
+        threshold: parseInt(document.getElementById('cfgAutoCleanThreshold').value) || 160,
+        max_age_hours: 24,
+        max_count: 150
+    };
+    await apiPost('/config', current);
+    showToast('自动清理设置已保存');
 }
 
 async function sendSMS() {

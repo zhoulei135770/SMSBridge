@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -49,6 +51,11 @@ var (
 	smsTodayCount int
 	smsSkipCount  int
 	smsTotalCount int
+
+	pollErrors   int
+	pollErrorsMu sync.Mutex
+	disconnected bool
+	disconnMu    sync.RWMutex
 )
 
 type HistoryEntry struct {
@@ -89,6 +96,21 @@ func addLog(level, msg, detail string) {
 	log.Printf("[%s] %s %s", level, msg, detail)
 }
 
+// runSystrayNoCGO is the fallback when no display is available.
+// Shared by both systray.go (CGO) and systray_nocgo.go (!CGO).
+func runSystrayNoCGO(onQuit func()) {
+	addLog("info", "无显示器，运行在无托盘模式", "")
+	log.Printf("运行中 | http://localhost:%s | Ctrl+C 退出（无显示器，托盘不可用）", serverPort)
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	<-sigCh
+
+	if onQuit != nil {
+		onQuit()
+	}
+}
+
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -116,12 +138,15 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	operator := ""
 	network := ""
 	// Use non-blocking check to avoid deadlock during modem Open/Init
+	connected := false
 	if modem.IsOpenNonBlocking() {
 		if s, err := modem.GetSignal(); err == nil {
 			signal = s
+			connected = true
 		}
 		if i, err := modem.GetIMEI(); err == nil {
 			imei = i
+			connected = true
 		}
 		if o, err := modem.GetOperator(); err == nil {
 			operator = o
@@ -130,17 +155,28 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 			network = n
 		}
 	}
+	// Also check the disconnected flag
+	disconnMu.RLock()
+	if disconnected {
+		connected = false
+	}
+	disconnMu.RUnlock()
 	runningMu.RLock()
 	isRunning := running
 	runningMu.RUnlock()
+	pollErrorsMu.Lock()
+	errs := pollErrors
+	pollErrorsMu.Unlock()
 	writeJSON(w, map[string]interface{}{
-		"running":  isRunning,
-		"polling":  isRunning,
-		"port":     serverPort,
-		"signal":   signal,
-		"imei":     imei,
-		"operator": operator,
-		"network":  network,
+		"running":    isRunning,
+		"polling":    isRunning,
+		"connected":  connected,
+		"port":       serverPort,
+		"signal":     signal,
+		"imei":       imei,
+		"operator":   operator,
+		"network":    network,
+		"poll_errors": errs,
 	})
 }
 
@@ -257,6 +293,52 @@ func handleSMSDelete(w http.ResponseWriter, r *http.Request) {
 	historyMu.Unlock()
 	addLog("info", "短信已删除", req.Phone)
 	writeJSON(w, map[string]string{"status": "deleted"})
+}
+
+// GET /api/sms/usage
+func handleSMSUsage(w http.ResponseWriter, r *http.Request) {
+	used, total, err := modem.GetSMSUsage()
+	if err != nil {
+		// Return cached values from history if modem not available
+		used = len(smsHistory)
+		total = 180
+	}
+	writeJSON(w, map[string]interface{}{
+		"used":      used,
+		"total":     total,
+		"in_memory": len(smsHistory),
+	})
+}
+
+// POST /api/sms/clear
+func handleSMSClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeJSON(w, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	deleted, err := modem.ClearAllSMS()
+	if err != nil {
+		writeJSON(w, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Clear in-memory history and dedup set
+	historyMu.Lock()
+	smsHistory = nil
+	historyMu.Unlock()
+	seenMu.Lock()
+	seenMsgs = make(map[string]bool)
+	smsTotalCount = 0
+	smsTodayCount = 0
+	smsSkipCount = 0
+	seenMu.Unlock()
+
+	addLog("info", fmt.Sprintf("已清空全部短信 (%d 条)", deleted), "")
+	writeJSON(w, map[string]interface{}{
+		"status":  "cleared",
+		"deleted": deleted,
+	})
 }
 
 // GET/POST /api/config
@@ -704,12 +786,61 @@ func stopPolling() {
 
 func pollOnce(cfg Config) {
 	if !modem.IsOpen() {
+		// If disconnected, keep retrying reconnect attempts
+		disconnMu.RLock()
+		isDisconnected := disconnected
+		disconnMu.RUnlock()
+		if isDisconnected {
+			pollErrorsMu.Lock()
+			pollErrors++
+			errs := pollErrors
+			pollErrorsMu.Unlock()
+			if errs%10 == 0 {
+				go tryReconnect()
+			}
+		}
 		return
 	}
 
 	msgs, err := modem.ReadNewSMS()
 	if err != nil {
-		return // Silent failure, retry next cycle
+		// Track consecutive errors for disconnect detection
+		pollErrorsMu.Lock()
+		pollErrors++
+		errs := pollErrors
+		pollErrorsMu.Unlock()
+
+		if errs == 3 {
+			// 3 consecutive failures → likely disconnected
+			disconnMu.Lock()
+			wasDisconnected := disconnected
+			disconnected = true
+			disconnMu.Unlock()
+			if !wasDisconnected {
+				addLog("warn", "模组已断开", "串口通信失败，尝试自动重连...")
+				notifyDesktop("SMS Forwarder - 模组已断开", "ML307A 通信异常，尝试重连...")
+			}
+		}
+		// Try auto-reconnect every ~10s after disconnect
+		if errs >= 10 && errs%10 == 0 {
+			go tryReconnect()
+		}
+		return
+	}
+
+	// Successful communication → reset error counter
+	pollErrorsMu.Lock()
+	pollErrors = 0
+	pollErrorsMu.Unlock()
+
+	// If we were disconnected, mark as reconnected
+	disconnMu.Lock()
+	wasDisconnected := disconnected
+	disconnected = false
+	disconnMu.Unlock()
+	if wasDisconnected {
+		addLog("info", "模组已重连", "串口通信恢复正常")
+		notifyDesktop("SMS Forwarder - 模组已重连", "ML307A 通信恢复正常")
 	}
 
 	for _, msg := range msgs {
@@ -756,7 +887,47 @@ func pollOnce(cfg Config) {
 			seenMu.Unlock()
 		}
 	}
+
+	// Auto-cleanup: check SMS storage and clear if over threshold
+	doAutoCleanup(cfg)
 }
+
+// doAutoCleanup checks storage usage and clears old SMS if needed.
+func doAutoCleanup(cfg Config) {
+	if !cfg.AutoCleanup.Enabled {
+		return
+	}
+
+	threshold := cfg.AutoCleanup.Threshold
+	if threshold <= 0 {
+		threshold = 160
+	}
+
+	used, _, err := modem.GetSMSUsage()
+	if err != nil {
+		return
+	}
+
+	if used >= threshold {
+		deleted, err := modem.ClearAllSMS()
+		if err != nil {
+			addLog("warn", "自动清理失败", err.Error())
+			return
+		}
+
+		// Clear in-memory history
+		historyMu.Lock()
+		smsHistory = nil
+		historyMu.Unlock()
+		seenMu.Lock()
+		seenMsgs = make(map[string]bool)
+		seenMu.Unlock()
+
+		addLog("info", fmt.Sprintf("自动清理: 已删除 %d 条短信 (阈值 %d)", deleted, threshold), "")
+	}
+}
+
+// ── Web Server ───────────────────────────────────────────────────────────────
 
 // ── Web Server ───────────────────────────────────────────────────────────────
 
@@ -768,6 +939,8 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/sms", corsMiddleware(handleSMS))
 	mux.HandleFunc("/api/sms/send", corsMiddleware(handleSMSSend))
 	mux.HandleFunc("/api/sms/delete", corsMiddleware(handleSMSDelete))
+	mux.HandleFunc("/api/sms/clear", corsMiddleware(handleSMSClear))
+	mux.HandleFunc("/api/sms/usage", corsMiddleware(handleSMSUsage))
 	mux.HandleFunc("/api/config", corsMiddleware(handleConfig))
 	mux.HandleFunc("/api/config/import", corsMiddleware(handleConfigImport))
 	mux.HandleFunc("/api/config/export", corsMiddleware(handleConfigExport))
@@ -827,10 +1000,16 @@ func setupRoutes(mux *http.ServeMux) {
 				html = strings.Replace(html, `class="signal-text">-`, fmt.Sprintf(`class="signal-text">%d/31`, s), 1)
 			}
 			if running, ok := status["running"].(bool); ok && running {
-				html = strings.Replace(html, `id="cardStatus">未连接`, `id="cardStatus">`+
-					`<span class="status-led led-green"></span> 运行中`, 1)
-				html = strings.Replace(html, `class="dot offline"`, `class="dot online"`, 1)
-				html = strings.Replace(html, `id="statusText">未连接`, `id="statusText">已连接`, 1)
+				if connected, ok := status["connected"].(bool); ok && !connected {
+					html = strings.Replace(html, `id="cardStatus">未连接`, `id="cardStatus">`+
+						`<span class="status-led led-red"></span> 模组断开`, 1)
+					html = strings.Replace(html, `id="statusText">未连接`, `id="statusText">模组断开`, 1)
+				} else {
+					html = strings.Replace(html, `id="cardStatus">未连接`, `id="cardStatus">`+
+						`<span class="status-led led-green"></span> 运行中`, 1)
+					html = strings.Replace(html, `class="dot offline"`, `class="dot online"`, 1)
+					html = strings.Replace(html, `id="statusText">未连接`, `id="statusText">已连接`, 1)
+				}
 			}
 			w.Write([]byte(html))
 			return
@@ -958,10 +1137,11 @@ func isAddrInUse(err error) bool {
 // Input format: "YY/MM/DD,HH:MM:SS+ZZ" where ZZ is quarter-hour offset.
 // getInitialStatus returns current modem status for pre-populating the dashboard.
 func getInitialStatus() map[string]interface{} {
-	signal, operator, imei, network := 0, "", "", ""
+	signal, operator, imei, network, connected := 0, "", "", "", false
 	if modem.IsOpenNonBlocking() {
 		if s, err := modem.GetSignal(); err == nil {
 			signal = s
+			connected = true
 		}
 		if i, err := modem.GetIMEI(); err == nil {
 			imei = i
@@ -977,14 +1157,60 @@ func getInitialStatus() map[string]interface{} {
 	isRunning := running
 	runningMu.RUnlock()
 	return map[string]interface{}{
-		"running":  isRunning,
-		"polling":  isRunning,
-		"signal":   signal,
-		"imei":     imei,
-		"operator": operator,
-		"network":  network,
-		"port":     serverPort,
+		"running":   isRunning,
+		"polling":   isRunning,
+		"connected": connected,
+		"signal":    signal,
+		"imei":      imei,
+		"operator":  operator,
+		"network":   network,
+		"port":      serverPort,
 	}
+}
+
+// tryReconnect attempts to close and re-open the modem connection.
+func tryReconnect() {
+	disconnMu.RLock()
+	if !disconnected {
+		disconnMu.RUnlock()
+		return
+	}
+	disconnMu.RUnlock()
+
+	addLog("info", "正在重连模组...", "")
+	modem.Close()
+	time.Sleep(1 * time.Second)
+
+	cfg := GetConfig()
+	port := cfg.Serial.Port
+	if port == "auto" || port == "" {
+		port = FindModemPort()
+	}
+	if port == "" {
+		addLog("warn", "重连失败", "未检测到可用串口")
+		// Keep pollErrors so we keep retrying
+		return
+	}
+
+	baud := cfg.Serial.Baudrate
+	if baud == 0 {
+		baud = 115200
+	}
+	if err := modem.Open(port, baud); err != nil {
+		addLog("warn", "重连失败", err.Error())
+		return
+	}
+	if err := modem.Init(); err != nil {
+		addLog("warn", "重连初始化警告", err.Error())
+	}
+
+	// Reset error counter so next successful poll clears disconnected flag
+	pollErrorsMu.Lock()
+	pollErrors = 0
+	pollErrorsMu.Unlock()
+
+	addLog("info", "模组已重连", port)
+	notifyDesktop("SMS Forwarder - 模组已重连", "端口: "+port)
 }
 
 func mustMarshal(v interface{}) string {

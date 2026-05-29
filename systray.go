@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"os"
 
 	"github.com/getlantern/systray"
 )
@@ -104,6 +105,11 @@ func generateIcon() []byte {
 // ── Systray ──────────────────────────────────────────────────────────────────
 
 func runSystray(onQuit func()) {
+	// Fallback: if no display available, use no-tray mode
+	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		runSystrayNoCGO(onQuit)
+		return
+	}
 	systray.Run(func() {
 		icon := generateIcon()
 		systray.SetIcon(icon)

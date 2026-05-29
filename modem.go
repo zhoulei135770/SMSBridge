@@ -7,9 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
-		"time"
+	"time"
 	"unicode/utf16"
 )
 
@@ -353,6 +354,58 @@ func (m *Modem) ReadNewSMS() ([]SMSMessage, error) {
 func (m *Modem) DeleteSMS(index int) error {
 	_, err := m.atCommand(fmt.Sprintf("AT+CMGD=%d", index))
 	return err
+}
+
+// ClearAllSMS deletes all SMS from modem storage.
+// Returns the number of SMS that were in storage before clearing.
+func (m *Modem) ClearAllSMS() (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sp == nil {
+		return 0, fmt.Errorf("modem not open")
+	}
+	m.sp.mu.Lock()
+	defer m.sp.mu.Unlock()
+
+	// Ensure text mode
+	_, _ = sendATLocked(m.sp, "AT+CMGF=1", 500*time.Millisecond)
+
+	// Get current usage before clearing
+	used, _, _ := getSMSUsageLocked(m.sp)
+
+	// Delete all SMS (AT+CMGD=1,4 = delete all messages from index 1)
+	_, err := sendATLocked(m.sp, "AT+CMGD=1,4", 5*time.Second)
+	if err != nil {
+		return 0, fmt.Errorf("clear SMS: %w", err)
+	}
+
+	return used, nil
+}
+
+// GetSMSUsage returns used and total SMS storage slots.
+func (m *Modem) GetSMSUsage() (used, total int, err error) {
+	if m.sp == nil {
+		return 0, 0, fmt.Errorf("modem not open")
+	}
+	m.sp.mu.Lock()
+	defer m.sp.mu.Unlock()
+	return getSMSUsageLocked(m.sp)
+}
+
+// getSMSUsageLocked reads storage stats (caller must hold sp.mu).
+func getSMSUsageLocked(sp *SerialPort) (used, total int, err error) {
+	resp, err := sendATLocked(sp, "AT+CPMS?", 1*time.Second)
+	if err != nil {
+		return 0, 0, err
+	}
+	// Parse: +CPMS: "ME",used,total,"ME",used,total,"ME",used,total
+	re := regexp.MustCompile(`\+CPMS:\s*"[^"]+",(\d+),(\d+)`)
+	matches := re.FindStringSubmatch(resp)
+	if len(matches) >= 3 {
+		used, _ = strconv.Atoi(matches[1])
+		total, _ = strconv.Atoi(matches[2])
+	}
+	return
 }
 
 func (m *Modem) SendSMS(number, content string) error {

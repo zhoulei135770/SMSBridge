@@ -12,7 +12,7 @@
         <nav class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h1><span class="logo-icon"></span>SMS Forwarder</h1>
-                <span class="version">v2.3</span>
+                <span class="version">v2.4</span>
             </div>
             <ul class="nav-list">
                 <li>
@@ -217,11 +217,21 @@
             <!-- SMS Records -->
             <section class="page" id="page-sms">
                 <h2>短信记录</h2>
+                <div class="storage-bar-container" id="storageBarContainer">
+                    <div class="storage-info">
+                        <span>模块存储: <strong id="storageUsed">-</strong>/<span id="storageTotal">180</span></span>
+                        <span class="storage-pct" id="storagePct"></span>
+                    </div>
+                    <div class="storage-bar">
+                        <div class="storage-bar-fill" id="storageBarFill" style="width:0%"></div>
+                    </div>
+                </div>
                 <div class="section-header">
                     <div class="search-box">
                         <input type="text" id="smsSearch" placeholder="搜索短信..." oninput="filterSMS()">
                     </div>
-                    <button class="btn" onclick="loadSMS()">刷新</button>
+                    <button class="btn" onclick="loadSMS()">🔄 刷新</button>
+                    <button class="btn btn-danger" onclick="clearAllSMS()" title="删除模块中全部短信">🗑 一键清空</button>
                 </div>
                 <div class="sms-list" id="allSMSList">
                     <div class="empty-state">暂无短信记录</div>
@@ -337,6 +347,21 @@
             <!-- Settings -->
             <section class="page" id="page-settings">
                 <h2>设置</h2>
+                <div class="card">
+                    <h3>🗑 短信自动清理</h3>
+                    <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">ML307A 模块短信存储上限 180 条。超过阈值时自动清空，避免收不到验证码。</p>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="cfgAutoCleanEnabled" onchange="updateAutoCleanUI()"> 启用自动清理
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>触发阈值（条）</label>
+                        <input type="number" id="cfgAutoCleanThreshold" min="10" max="180" placeholder="160">
+                        <span style="font-size:12px;color:var(--text-muted)">当短信超过此数量时触发全部清空</span>
+                    </div>
+                    <button class="btn btn-primary" onclick="saveAutoCleanConfig()">💾 保存</button>
+                </div>
                 <div class="card">
                     <h3>配置管理</h3>
                     <div class="btn-group">

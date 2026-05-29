@@ -37,13 +37,23 @@ type FilterConfig struct {
 }
 
 type Config struct {
-	Serial     SerialConfig   `json:"serial"`
-	Dingtalk   DingtalkConfig `json:"dingtalk"`
-	Wechat     WechatConfig   `json:"wechat"`
-	Filter     FilterConfig   `json:"filter"`
-	PollingSec int            `json:"polling_sec"`
-	AutoStart  bool           `json:"auto_start"`
-	Theme      string         `json:"theme"`
+	Serial      SerialConfig      `json:"serial"`
+	Dingtalk    DingtalkConfig    `json:"dingtalk"`
+	Wechat      WechatConfig      `json:"wechat"`
+	Filter      FilterConfig      `json:"filter"`
+	AutoCleanup AutoCleanupConfig `json:"auto_cleanup"`
+	PollingSec  int               `json:"polling_sec"`
+	AutoStart   bool              `json:"auto_start"`
+	Theme       string            `json:"theme"`
+}
+
+// ── Auto Cleanup Config ─────────────────────────────────────────────────────
+
+type AutoCleanupConfig struct {
+	Enabled     bool `json:"enabled"`
+	MaxAgeHours int  `json:"max_age_hours"` // SMS older than this will be cleaned
+	MaxCount    int  `json:"max_count"`     // Max SMS to keep, old ones deleted first
+	Threshold   int  `json:"threshold"`     // Trigger cleanup when count exceeds this
 }
 
 // ── Default Config ───────────────────────────────────────────────────────────
@@ -70,7 +80,13 @@ func DefaultConfig() Config {
 			Keywords:         []string{"验证码"},
 			ForwardLinks:     true,
 			ForwardLinksOnly: false,
-		ForwardTemplate:  "default",
+			ForwardTemplate:  "default",
+		},
+		AutoCleanup: AutoCleanupConfig{
+			Enabled:     true,
+			MaxAgeHours: 24,
+			MaxCount:    150,
+			Threshold:   160,
 		},
 		PollingSec: 1,
 		AutoStart:  false,
