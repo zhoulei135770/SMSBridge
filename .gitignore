@@ -1,0 +1,75 @@
+# ============================================================================
+#  ML307A-DSLN SMS Gateway — .gitignore
+# ============================================================================
+
+# ---- 构建产物与中间产物 ----
+out/
+app/test/out/
+app/build/
+build/
+*.o
+*.obj
+*.su
+*.elf
+*.map
+*.ld.obj
+*.d
+*.a
+*.exe
+*.bin.tmp
+
+# ---- 日志 ----
+*.log
+*.err
+logs/
+
+# ---- 刷写/打包临时目录与包 ----
+flash/
+*.zip
+# 例外：如需随仓库分发刷写包，可解除下面注释并显式 add
+# !firmware/*.zip
+*.pac
+*.fbf
+*.diff
+
+# ---- vendor SDK / 底包 / 工具（不随仓库分发）----
+sdk/
+sdk_inc/
+aboot-tools*/
+QFlash*/
+prebuild/
+prebuild_*/
+tools/aboot/
+tools/toolchain/
+tools/utils/
+
+# ---- 手册与提取出的文本 ----
+*.pdf
+*手册*.txt
+
+# ---- 编辑器 / IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.bak
+*.orig
+*.rej
+
+# ---- 操作系统 / 临时文件 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+*.tmp
+*.temp
+tmp/
+temp/
+_sanitize.ps1
+
+# ---- 本地个人配置（不要提交自己的密钥/号码）----
+.env
+*.local
+*.secret
+rcfg.bin
+cfg.bin
