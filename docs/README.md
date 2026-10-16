@@ -1,52 +1,32 @@
-# ML307A-DSLN 4G 短信网关 · OpenCPU 固件说明
+# ML307A-DSLN 4G 短信网关 · OpenCPU 固件交付说明
 
 > 目标硬件：**ML307A-DSLN**（ASR1606，DS 系列）· 底板 DEMO-ML307X-V1.04
-> 开发环境：中移 ML307A OpenCPU SDK 1.4.2（**不随本仓库分发**，请自行获取后放到 `sdk/`）
-> 本文件是文档索引。仓库总览、编译/刷写步骤请看仓库根目录的 [`README.md`](../README.md)。
-
----
-
-## 零、本仓库发布版与原始工程的差异
-
-本目录下的文档原本来自一次**真实的开发与上板过程**，其中包含现场信息。整理为公开仓库时做了如下处理：
-
-1. **脱敏**：所有真实手机号 / 机器人密钥 / IMEI / SN / 真实分配 IP / 本地绝对路径
-   已替换为占位符或示例值。范围与映射表见 [`../PRIVACY.md`](../PRIVACY.md)。
-2. **不再随仓库分发 vendor 内容**：OpenCPU SDK、预编译底包、`aboot`/`adownload` 工具、
-   官方 PDF 手册均**不在**本仓库。因此文档里出现的 `sdk/...`、`out/...` 等路径，
-   请在你自己获取 SDK 后按相同结构放置（`sdk/ML307A_OpenCPU_Standard_1.4.2/`）。
-3. **保留了全部技术事实**：踩坑记录、实测回显、根因分析、判定方法一字未删——
-   这些正是本仓库最有价值的部分。
-4. 文档写作时点不同，因此少量表述（如"当前进度"）反映的是当时的状态，
-   请以仓库根目录 `README.md` 与源码为准。
+> 开发环境：中移 ML307A OpenCPU SDK 1.4.2（**已随本工程克隆到 `sdk/`**）
+> 本文件是入口索引，读完这一页你就知道工程在哪、怎么编译、结论是什么。
 
 ---
 
 ## 一、最重要的三件事（先说结论）
 
-### 1. 先自己拿到 SDK，再照文档复现编译链路
+### 1. 你其实已经有 SDK 了，而且这台机器已经成功编译出可烧录固件
 
-本仓库**不含** SDK。请从官方渠道获取 `ML307A_OpenCPU_Standard_1.4.2`，
-解压到仓库根目录的 `sdk/ML307A_OpenCPU_Standard_1.4.2/`（该目录已在 `.gitignore` 中）。
-之后 `pwsh -File tools/build_firmware.ps1` 即可跑通完整编译链路，产物为：
+在本次工作中已把 SDK 克隆到 `sdk/ML307A_OpenCPU_Standard_1.4.2/`（1.3 GB，4579 个文件），
+并**完整跑通了官方编译链路**，产物为：
 
 ```
 sdk/ML307A_OpenCPU_Standard_1.4.2/out/images/ML307A/DSLN/
 ├── ML307A_DSLN_APP.elf     应用 ELF（带调试符号）
-├── ML307A_DSLN_APP.bin     应用镜像（供打包；= 本仓库 firmware/user_app.bin）
+├── ML307A_DSLN_APP.bin     应用镜像（供打包）
 ├── ML307A_DSLN_APP.map     链接 map（查符号/占用）
-└── ML307A_DSLN_APP.zip     ★ 整包烧录包（含全部分区镜像 + download.json）
+└── ML307A_DSLN_APP.zip     ★ 最终烧录包（含全部分区镜像 + download.json）
 ```
 
-> 只升级应用请用 **app-only** 流程（`firmware/flash_apponly.ps1`），不要直接刷整包。
-> 区别与风险见仓库根 `README.md` 的「刷写步骤」。
-
-### 2. 需求文档里常见的 4 个错误前提（否则会白花时间）
+### 2. 你的需求文档里有 4 个前提是错的，必须改（否则会白花时间）
 
 | 需求文档里的说法 | 实际情况（证据） |
 |---|---|
 | "QFlash 烧录 `.pac` 固件" | 本 SDK **根本不产生 `.pac`**。`pack.bat` 用 ASR 的 `arelease.exe` 生成 **`.zip`** 烧录包；`.pac` 是展锐(UNISOC)格式。你下载的 QFlash 是**移远 Quectel** 工具（主体是展锐下载器换皮），全工具内对 `ML307`/`CRANEL`/`ASR1606` **零命中**，能否烧本模组未知。正确路线见文档 01。 |
-| "Web 访问 `http://192.168.0.1:8080`" | `192.168.0.1` 在底包里**完全不存在**（ASCII 与两种字节序均 0 命中）。SDK 里唯一的默认网关证据是 `192.168.0.1`（掩码 `255.255.0.0`）。固件会**在获取到 IP 后打印真实访问地址**，以实测为准。 |
+| "Web 访问 `http://192.168.4.1:8080`" | `192.168.4.1` 在底包里**完全不存在**（ASCII 与两种字节序均 0 命中）。SDK 里唯一的默认网关证据是 `192.168.0.1`（掩码 `255.255.0.0`）。固件会**在获取到 IP 后打印真实访问地址**，以实测为准。 |
 | "Flash 1MB / RAM 3135KB" | 权威依据是 `prebuild/ld/ML307A/DSLN/app_dsln.ld`：**应用可用 flash 1024K / ram 512K**。"1MB" 指 APP 分区（DSLN 整片 NOR 是 8 MiB）；"3135KB RAM" 在 SDK 里**找不到依据**。 |
 | "Keil 编译" | **完全不需要 Keil**。SDK 自带 `arm-none-eabi-gcc 8.3.1` + `make.exe` + `python3` + `arelease.exe`，官方流程是批处理 + make。本机从未安装 Keil，编译照样通过。 |
 
@@ -66,7 +46,7 @@ sdk/ML307A_OpenCPU_Standard_1.4.2/out/images/ML307A/DSLN/
 ## 二、30 秒快速开始
 
 ```powershell
-# 1) 主机单元测试 + 栈预算检查（不需要模组，932 项断言）
+# 1) 主机单元测试 + 栈预算检查（不需要模组，844 项断言）
 pwsh -File app/test/run_host_tests.ps1
 
 # 1b) 只跑栈预算检查（-fstack-usage + 调用链求和，防大对象上栈）
@@ -85,14 +65,12 @@ pwsh -File tools/deploy_to_sdk.ps1
 
 | 路径 | 内容 |
 |---|---|
-| `app/` | **固件源码**（`inc/` + `src/`，模块化 C99）。这是源码的唯一来源，编译前自动部署进 SDK |
+| `app/` | **固件源码**（19 个文件，模块化 C99）。这是源码的唯一来源，编译前自动部署进 SDK |
 | `app/inc/` `app/src/` | 头文件与实现 |
-| `app/test/` | 主机单元测试：`host_tests.c`（**932 断言**，含短信远程配置模块 + 时间解析 + IPv4/IPv6 地址解析）+ `pdu_vectors.h`（48 组 PDU 向量）+ `gen_pdus.py`（独立 PDU 编码器）+ `run_host_tests.ps1` + `check_stack_budget.ps1`（栈预算自动检查） |
+| `app/test/` | 主机单元测试：`host_tests.c`（844 断言，含短信远程配置模块 2/3/4/5/6 + 时间解析 + IPv4/IPv6 地址解析）+ `gen_pdus.py`（独立 PDU 编码器，48 用例）+ `check_stack_budget.ps1`（栈预算自动检查） |
 | `tools/deploy_to_sdk.ps1` | 把 `app/` 部署进 SDK 并生成 `custom/custom.mk` |
-| `tools/build_firmware.ps1` | 一键编译 + 打包（已修掉官方脚本的两个坑） |
-| `tools/diag_listen2.ps1` | 诊断上报接收端（无 UART 日志时的定位通道） |
-| `firmware/` | 应用镜像 `user_app.bin` + 校验值 + `flash_apponly.ps1` 刷写脚本 |
-| `sdk/` | **需自行下载**的 ML307A OpenCPU SDK 1.4.2（不随仓库分发，已在 `.gitignore` 中） |
+| `tools/build_firmware.ps1` | 一键编译 + 打包（已修掉官方脚本在本机的两个坑） |
+| `sdk/` | ML307A OpenCPU SDK 1.4.2（含预编译底包与工具链） |
 | `docs/01-编译与烧录指南.md` | 编译环境、产物、烧录器选型、下载模式、日志串口 |
 | `docs/02-设计与API映射.md` | 架构、模块职责、SDK API 映射、链接边界、内存占用 |
 | `docs/03-需求对照与差异说明.md` | **逐条对照你的需求 + 差异与理由（优先看这份）** |
@@ -101,7 +79,7 @@ pwsh -File tools/deploy_to_sdk.ps1
 | `docs/11-IPv6与公网IP-证据实现与上板验证.md` | **IPv6 实时开启 + 公网 IP**：能力证据（出厂实机回显/链接边界/反汇编）、实现、必须上板确认清单 |
 | `docs/12-上板记录-首次成功烧录与IPv6实测.md` | **上板记录**：app-only 烧录流程、软下载入口（免短接）、烧录前后对比、IPv6 公网地址端到端实测、面板不可达的遗留问题 |
 | `docs/research/` | 调研原始报告（SDK/AT/烧录/符号核实，含来源 URL） |
-| `docs/sdk-reference/` | `api-cmiot.md`（cmiot API 速查）、`api-platform-net.md`（平台网络 API）、`app-link-symbols.txt`（**应用可调用 326 符号全清单**） |
+| `docs/sdk-reference/` | `api-cmiot.md`（cmiot API 速查）、`app-link-symbols.txt`（**应用可调用 326 符号全清单**） |
 
 ---
 
@@ -129,7 +107,7 @@ pwsh -File tools/deploy_to_sdk.ps1
 
 **已完成并有证据**
 - 官方编译链路跑通（`.elf`/`.bin`/`.zip` 全部产出），全文无错误
-- 主机单元测试 **932 项断言全部通过**（含 PDU 往返、配置序列化、缓冲区越界哨兵、XSS 转义、
+- 主机单元测试 **844 项断言全部通过**（含 PDU 往返、配置序列化、缓冲区越界哨兵、XSS 转义、
   短信远程配置的指令解析、`rcfg.bin` 坏文件回退、管理员/非管理员路由越权检查、
   转发组装（模板/关键词/加签/降级）、时间解析，以及 IPv4/IPv6 地址解析与 `AT+CGPADDR` 双栈形态）
 - 测试过程中发现并修复了 **3 个真实缺陷**（见 `docs/02` 的"测试发现的问题"一节）
@@ -152,11 +130,12 @@ pwsh -File tools/deploy_to_sdk.ps1
 8. NTP 对时能否连通：`cm_ntp_sync()` 依赖 asocket + async_dns + eloop（本工程已投递到 eloop 线程执行），
    失败时加签自动降级；同时可用 `AT+CCLK?`（模组时钟）作为兜底
 9. ~~`AT+CGPADDR=1` 在 `IPV4V6` 下是否返回两个引号字段~~ → **2026-10-15 已实测证实**：
-   `+CGPADDR: 1,"10.0.0.100","2409:xxxx:xxxx:xxxx::1"`（见 `docs/12`）
+   `+CGPADDR: 1,"10.104.34.201","2409:xxxx:xxxx:xxxx::1"`（见 `docs/12`）
 10. 公网 IP 回显服务在 CMCC 卡上的**可达性与返回地址族**（面板"刷新公网 IP"；
     若显示"公网 IPv6 出口"，说明该域名走的是 v6 出口，需换 URL）
 
 > **2026-10-15 上板结论**（详见 `docs/12`）：新固件已用 app-only 包成功烧入并稳定运行；
 > IPv6 公网地址端到端可用（PC 经 RNDIS 拿到同前缀公网 v6，可连通公网 IPv6）；
 > **遗留问题**：Web 面板 8080 / 探针 8081 在 RNDIS 侧只建立 TCP、不返回数据（既有的"栈分离"问题，待修）。
+
 

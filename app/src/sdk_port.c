@@ -50,6 +50,17 @@ extern unsigned int get_tx_byte_all(void);   /* 累计发送字节（未文档�
 /* 常量                                                                */
 /* ================================================================== */
 #define OS_TICK_MS              5u          /* 由 app.c 的 osDelayMs(ms/5) 反推：1 tick = 5ms */
+/*
+ * ★ 诊断上报开关（2026-10-15 加，为"拔掉电脑长期运行"场景）。
+ *   诊断上报 = 每约 10 秒往 PC（192.168.0.100:9090）POST 一行。
+ *   离线（没插电脑）时该请求会走 HTTP 超时，**拖慢短信任务**，因此：
+ *     - 长期运行版：默认 0（完全不发上报，零开销）；
+ *     - 现场排查时：改成 1 重新编译烧录即可（开启后连续 3 次失败会自动闭嘴）。
+ */
+#ifndef SDK_DIAG_ENABLE
+#define SDK_DIAG_ENABLE 0
+#endif
+
 #define AT_RESP_MAX             512u   /* 单条短信 CMGR 的 PDU 可到 ~180 字节，192 太小 */
 #define AT_POLL_INTERVAL_MS     20u
 #define CFG_FILE_MAIN           "cfg.bin"
@@ -726,10 +737,10 @@ int sdk_at_cmd(const char *cmd, char *resp, size_t resp_size, uint32_t timeout_m
     }
 
     /* 诊断：短信读取这类长应答，把读取过程的细节上报（现场定位用） */
-    if (strncmp(cmd, "AT+CMG", 6) == 0) {
-        sdk_diag_post("atread %s cb=%d drain=%d len=%d first=%.16s",
-                      cmd, s_virtat_cb_count, s_virtat_drain_hits,
-                      s_virtat_len, s_virtat_rx);
+    /* 只在"异常"（超时/拿不到数据）时上报，正常轮询不再每 10 秒发一条 */
+    if (strncmp(cmd, "AT+CMG", 6) == 0 && (result < 0 || s_virtat_len == 0)) {
+        sdk_diag_post("atread FAIL %s rc=%d cb=%d drain=%d len=%d",
+                      cmd, result, s_virtat_cb_count, s_virtat_drain_hits, s_virtat_len);
     }
 
     if (s_virtat_done) {
@@ -1001,7 +1012,7 @@ int sdk_net_pdp_addrs(char *v4, size_t v4_size, char *v6, size_t v6_size)
      *
      * ⚠ 双栈返回形态属**未上板证实**项（docs/11 §3.3）：本仓库只有第三方社区证据
      *   表明 IPV4V6 下会返回两个引号字段：
-     *       +CGPADDR: 1,"10.20.30.40","2409:8a00:1234::5"
+     *       +CGPADDR: 1,"10.20.30.40","2409:xxxx:xxxx:xxxx::1"
      *   因此解析交给纯逻辑模块 net_addr（四种形态都覆盖，已主机测试），并且
      *   **解析失败时把原始应答打进日志**，方便上板第一时间确认真实形态。
      */
@@ -1531,6 +1542,8 @@ extern void lwip_socket_init(void);
 #define SDK_DIAG_HOST "192.168.0.100"      /* RNDIS 侧 PC 地址 */
 #define SDK_DIAG_PORT 9090
 
+static int s_diag_fail;
+
 void sdk_diag_post(const char *fmt, ...)
 {
     char    body[192];
@@ -1540,9 +1553,14 @@ void sdk_diag_post(const char *fmt, ...)
     (void)vsnprintf(body, sizeof(body), fmt, ap);
     va_end(ap);
 
-    (void)sdk_http_post_json("http://" SDK_DIAG_HOST ":9090/diag",
-                             "text/plain", body, (uint32_t)strlen(body), NULL, 0u);
-    sdk_log_printf("[diag-post] %s\r\n", body);
+#if SDK_DIAG_ENABLE
+    if (s_diag_fail < 3) {                 /* 连续失败 3 次就闭嘴：离线时不再拖慢短信任务 */
+        int rc = sdk_http_post_json("http://" SDK_DIAG_HOST ":9090/diag",
+                                    "text/plain", body, (uint32_t)strlen(body), NULL, 0u);
+        if (rc >= 200 && rc < 300) { s_diag_fail = 0; } else { ++s_diag_fail; }
+    }
+#endif
+    sdk_log_printf("[diag] %s\r\n", body);
 }
 
 static cm_eloop_handle_t s_eloop;
@@ -1864,5 +1882,7 @@ int sdk_srv_listening(uint16_t port)
     }
     return 0;
 }
+
+
 
 

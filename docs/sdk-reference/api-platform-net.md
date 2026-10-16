@@ -21,7 +21,7 @@
 | 2 | `LWIP_NO_STATIC` 在本底包 **被定义为 `0`**（`lwipopts_crane.h:218`），因此 `lwip_api.h:414` 的 `#if !LWIP_NO_STATIC` 恒为真，**头文件层面全部 nwst 声明可见**；但符号层面第 1 条为准 —— 声明可见 ≠ 可链接。 | 高 |
 | 3 | `nwst_callback_fn` **在 SDK 中找不到任何 typedef/定义**，仅在 `lwip_api.h:428` 被使用一次；其定义所在的 `Dialer_Task.h` **不存在于 include 树**（仅作为 `-IW:\tavor\Arbel\obj_PMD2NONE\inc` 的调试路径出现在 ELF 中）。**结论：未证实**。 | 高（"找不到"这一事实） |
 | 4 | **底包是 CRANE 平台，不是 NBIOT**：构建 flag 含 `-DCRANE_MCU_DONGLE -DML307A_SUPPORT`，`lwipopts.h:53` 默认 `LWIP_PLATFORM_DEFINE = CRANE`，故 `IS_LWIP_PLATFORM_NBIOT == 0`。`lwip_api.h:148-155` 的 `#if IS_LWIP_PLATFORM_NBIOT` 块因此被编译掉；**但同一批 RNDIS 函数在 `lwip_api.h:387-390` 处还有一份无任何 `#if` 保护的裸声明，所以编译期仍然可见、可直接调用。** | 高 |
-| 5 | **`192.168.0.1` 在底包中完全不存在**（ASCII 扫描 0 次；大端 `C0 A8 04 01` 与字序 `01 04 A8 C0` 原始字节扫描也均为 0 次）。二进制里唯一成体系的默认网段是 **`192.168.0.x`**（`192.168.0.1` / `.0.100` / `.0.200`）。**需求文档假设的 192.168.0.1 被证伪（就底包内可见证据而言）**。 | 高 |
+| 5 | **`192.168.4.1` 在底包中完全不存在**（ASCII 扫描 0 次；大端 `C0 A8 04 01` 与字序 `01 04 A8 C0` 原始字节扫描也均为 0 次）。二进制里唯一成体系的默认网段是 **`192.168.0.x`**（`192.168.0.1` / `.0.100` / `.0.200`）。**需求文档假设的 192.168.4.1 被证伪（就底包内可见证据而言）**。 | 高 |
 | 6 | 唯一可佐证的 dhcpd 默认网关是 **`192.168.0.1`**，且仅以 **AT 命令帮助文本**形式出现（`dhcpd serverip` 示例），同时 `dhcpd netmask` 示例为 **`255.255.0.0`**（不是 255.255.255.0）。**这是帮助文本，不是从运行期配置结构里读出的真实默认值** —— 真实运行期默认仍需实测。 | 中（网关地址）/ 高（无 4.1） |
 | 7 | 流量统计另有一条**未在 map 中**的路径：`ip_flow_stats_rx/tx`（`lwip_minis.o`，存在）与 `lte_data_statistic_*` 系列（`lwip_stats.o`，存在）；而 `get_ip_flow_stats`、`netif_get_usb_packets`、`netif_get_uap_packets`、`netif_get_all_packets` **均未链接进底包**（尽管 `lwip_stats.h:43/49-51` 有声明）。 | 高 |
 | 8 | `cm_http_client_new` **不存在于本 SDK**；本版本公开 HTTP API 是 `cm_httpclient_create/delete/...`（`cm_http_client.o`，已链接）。属于**命名差异**，不是能力缺失。 | 高 |
@@ -187,7 +187,7 @@ lwip_nwst_set_cutoff_data.lwip_nwst_set_reminder_data.lwip_nwst_set_callback....
 
 1. ASCII `\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}` 全量枚举；
 2. ASCII `192\.168` 裸前缀 + `255\.255\.x\.x` 掩码；
-3. **原始字节**（绕过 ASCII 限制）：`192.168.0.1` 的网络序 `C0 A8 04 01` 与主机序 `01 04 A8 C0`；以及 `.0.1/.0.100/.0.200/.2.2/.1.1` 两种字节序。
+3. **原始字节**（绕过 ASCII 限制）：`192.168.4.1` 的网络序 `C0 A8 04 01` 与主机序 `01 04 A8 C0`；以及 `.0.1/.0.100/.0.200/.2.2/.1.1` 两种字节序。
 
 ### 2.2 全部 `192.168.x.x` 结果（4 个不同值，共 11 处）
 
@@ -195,10 +195,10 @@ lwip_nwst_set_cutoff_data.lwip_nwst_set_reminder_data.lwip_nwst_set_callback....
 |---|---|---|---|
 | `192.168.0.1` | 2 | `0x4a5920` | DDR_RO_EXEC（AT 帮助文本） |
 | `192.168.0.100` | 7 | `0x37d1a0` | DDR_SYS_RO_EXEC（含 `lwip_sttest_control` 附近） |
-| `192.168.0.100` | 1 | `0x4a59ae` | DDR_RO_EXEC（AT 帮助文本） |
+| `192.168.0.200` | 1 | `0x4a59ae` | DDR_RO_EXEC（AT 帮助文本） |
 | `192.168.2.2` | 1 | `0x2edbcc` | DDR_SYS_RO_EXEC（`create sink IP frame` 测试代码附近） |
 
-**`192.168.0.1`：0 处（ASCII）＋ 0 处（网络序字节）＋ 0 处（主机序字节）。**
+**`192.168.4.1`：0 处（ASCII）＋ 0 处（网络序字节）＋ 0 处（主机序字节）。**
 **`10.x.x.x`：0 处。`172.16-31.x.x`：0 处。`192.168.1.1`：0 处。**（`254.128.0.0` 是 IPv6 前缀常量，非 IPv4 网关。）
 
 ### 2.3 ±80 字节上下文（原始形态，`.` = 不可打印字节）
@@ -210,12 +210,12 @@ lwip_nwst_set_cutoff_data.lwip_nwst_set_reminder_data.lwip_nwst_set_callback....
 
 **`192.168.0.100` @ `0x4a5967`**（同块，作 ip start 示例）：
 ```
-cpserver|192.168.0.1 //config dhcpd serverip..    at*lwipctrl=system, dhcpstart|192.168.0.100 //config dhcpd ip start..    at*lwipctrl=system, dhcpend|192.168.0.100  //confi
+cpserver|192.168.0.1 //config dhcpd serverip..    at*lwipctrl=system, dhcpstart|192.168.0.100 //config dhcpd ip start..    at*lwipctrl=system, dhcpend|192.168.0.200  //confi
 ```
 
-**`192.168.0.100` @ `0x4a59ae`**（同块，作 ip end 示例）：
+**`192.168.0.200` @ `0x4a59ae`**（同块，作 ip end 示例）：
 ```
-hcpstart|192.168.0.100 //config dhcpd ip start..    at*lwipctrl=system, dhcpend|192.168.0.100  //config dhcpd ip end..    at*lwipctrl=system, dhcpmask|255.255.0.0  //config
+hcpstart|192.168.0.100 //config dhcpd ip start..    at*lwipctrl=system, dhcpend|192.168.0.200  //config dhcpd ip end..    at*lwipctrl=system, dhcpmask|255.255.0.0  //config
 ```
 
 **同一帮助块的完整原文**（`0x4a5800`–`0x4a5c00` 窗口）：
@@ -225,7 +225,7 @@ at*lwipctrl=system, dhcpstart //query dhcpd ip end..    at*lwipctrl=system, dhcp
 at*lwipctrl=system, dhcpflag|1 //config dhcpd dhcpflag..
 at*lwipctrl=system, dhcpserver|192.168.0.1 //config dhcpd serverip..
 at*lwipctrl=system, dhcpstart|192.168.0.100 //config dhcpd ip start..
-at*lwipctrl=system, dhcpend|192.168.0.100  //config dhcpd ip end..
+at*lwipctrl=system, dhcpend|192.168.0.200  //config dhcpd ip end..
 at*lwipctrl=system, dhcpmask|255.255.0.0  //config dhcpd netmask....
 ```
 → 帮助文本给出的默认网段三角是 **server `192.168.0.1` / start `.0.100` / end `.0.200` / mask `255.255.0.0`**。**注意掩码是 /16，不是 /24。**
@@ -519,7 +519,7 @@ void traffic_poll(uint8_t simid)
 
 | # | 待确认项 | 现状 | 建议确认方式 |
 |---|---|---|---|
-| 1 | **RNDIS 电脑侧默认网关到底是多少** | 底包内**无 `192.168.0.1`**；只有 AT 帮助文本给出的 `192.168.0.1/255.255.0.0`。运行期真实默认值**未证实** | 实机插 USB，在 PC 上 `ipconfig` 读默认网关；或 `at*lwipctrl=system, dhcpserver` 查询；或 `lwip_iflist("pc","gateway",buf)` 打印 |
+| 1 | **RNDIS 电脑侧默认网关到底是多少** | 底包内**无 `192.168.4.1`**；只有 AT 帮助文本给出的 `192.168.0.1/255.255.0.0`。运行期真实默认值**未证实** | 实机插 USB，在 PC 上 `ipconfig` 读默认网关；或 `at*lwipctrl=system, dhcpserver` 查询；或 `lwip_iflist("pc","gateway",buf)` 打印 |
 | 2 | 底包 NVRAM 里是否存有另一套 IP | 未证实（NVRAM 内容不在 `.axf` 中） | 实机查询 dhcpd 当前配置 |
 | 3 | `lwip_get_netif_usb_ifname()` 实际返回的字符串 | **未证实**（`.axf` 中未定位到独立 `"usb\0"` 字面量） | 实机打印返回值 |
 | 4 | `lwip_set_usb_forward_flag` 参数语义（0/1） | **推断**（头文件无注释） | 实测：置 0/1 观察 PC 能否上网 |

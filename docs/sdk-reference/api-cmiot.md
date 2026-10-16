@@ -614,7 +614,7 @@ uint8_t *cm_httpclient_uri_encode_component(const uint8_t *src, const uint32_t l
 
 ```c
 cm_httpclient_ret_code_e cm_httpclient_create(const uint8_t *url, cm_httpclient_event_callback_func callback, cm_httpclient_handle_t *handle);
-        /* @param url       服务器地址（url需要填写完整，例如 "https://203.0.113.10:80"） */
+        /* @param url       服务器地址（url需要填写完整，例如 "https://39.106.55.200:80"） */
         /* @param callback  客户端相关回调函数（使用 cm_httpclient_sync_request() 同步接口可忽略该参数，传NULL即可） */
         /* @param handle    [out] 实例句柄 */
         /* @return 0 成功 / 其他 失败（见 cm_httpclient_ret_code_e） */

@@ -1,31 +1,14 @@
 """核对我应用里用到的所有 SDK 函数是否都有真实头文件声明，并打印真实原型。
 
-用法:
-    python tools/verify_sdk_api.py
-    python tools/verify_sdk_api.py --sdk <SDK 根目录> --app <app 目录>
-
-说明:
-    默认按"脚本自身位置"推断仓库根目录（tools/ 的上一级），不写死任何本地路径，
-    克隆到任何机器、任何目录都能直接运行。SDK 目录默认为
-    <仓库根>/sdk/ML307A_OpenCPU_Standard_1.4.2，可用 --sdk 覆盖。
+用法: python tools/verify_sdk_api.py
 """
-import argparse
 import os
 import re
 import glob
 
-_here = os.path.dirname(os.path.abspath(__file__))
-WS = os.path.dirname(_here)          # 仓库根目录 = tools/ 的上一级
-
-_p = argparse.ArgumentParser()
-_p.add_argument('--sdk', default=os.path.join(WS, 'sdk', 'ML307A_OpenCPU_Standard_1.4.2'),
-                help='ML307A OpenCPU SDK 根目录')
-_p.add_argument('--app', default=os.path.join(WS, 'app'),
-                help='应用源码根目录（其下的 src/ 参与扫描）')
-_args, _ = _p.parse_known_args()
-
-APP = os.path.join(_args.app, 'src')
-SDK_INC = os.path.join(_args.sdk, 'include')
+WS = r'C:\Users\<USER>\Documents\deepseek-harness\default-workspace'
+APP = os.path.join(WS, 'app', 'src')
+SDK_INC = os.path.join(WS, 'sdk', 'ML307A_OpenCPU_Standard_1.4.2', 'include')
 
 # 收集应用源码里所有被调用的 cm_* / os* / lwip 类符号
 used = {}
@@ -83,3 +66,4 @@ print('== ② 在 SDK 头文件中【未找到声明】的（危险：可能是�
 print('=' * 78)
 for name in missing:
     print(f'  {name}   ← 被这些文件调用: {", ".join(sorted(used[name]))}')
+

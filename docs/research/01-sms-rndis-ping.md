@@ -17,7 +17,7 @@
 | # | 结论（一句话） | 置信度 |
 |---|---|---|
 | 1 | **短信**：官方途径只有"虚拟 AT 通道 + 3GPP 短信指令"，SDK **没有** `cm_sms.h` 这类短信专用 API；发送可用官方封装 `cm_virt_at_sms_send()`，接收必须用 `cm_virt_at_urc_reg()` 注册 URC 回调后自行解码 PDU（`+CMT` / `+CMGL`）。 | **高**（SDK 原文 + 两个版本清单 + 社区落地代码） |
-| 2 | **RNDIS**：**未证实**存在任何运行时开关 RNDIS 的 API（1.4.2 连 `cm_usb.h` 都没有；1.4.3 新增的 `cm_usb.h` 只管 USB 虚拟串口 USB2COM，没有任何 RNDIS/网卡接口）；官方构建面只有型号/容量/DEMO 开关，**没有 USB/RNDIS 编译期选项**；"电脑侧默认网关 = 192.168.0.1"**未证实**（SDK 平台层唯一可见的编译期默认值是 `LWIP_ROUTER_IP = 0xC0A80000`，即 192.168.**0**.x 家族）。 | **中**（否定性结论有原文，但"官方配置方式"与具体 IP 无官方正文） |
+| 2 | **RNDIS**：**未证实**存在任何运行时开关 RNDIS 的 API（1.4.2 连 `cm_usb.h` 都没有；1.4.3 新增的 `cm_usb.h` 只管 USB 虚拟串口 USB2COM，没有任何 RNDIS/网卡接口）；官方构建面只有型号/容量/DEMO 开关，**没有 USB/RNDIS 编译期选项**；"电脑侧默认网关 = 192.168.4.1"**未证实**（SDK 平台层唯一可见的编译期默认值是 `LWIP_ROUTER_IP = 0xC0A80000`，即 192.168.**0**.x 家族）。 | **中**（否定性结论有原文，但"官方配置方式"与具体 IP 无官方正文） |
 | 3 | **PING / 流量**：SDK 无 `cm_ping.h`、无 PING API；官方 AT 侧社区资料一致给出 `AT+MPING="host"`，但它能否走 OpenCPU 的虚拟 AT **未证实**（官方头文件明示虚拟 AT 只支持 3GPP 指令，并点名 `AT+MUESTATS` 等私有指令不支持）；PDP 上下行**字节数**没有任何官方接口（`cm_radio_info_t` 只有 `tx_time`/`rx_time` 累计**时长**），只能应用层自行计数。 | **中** |
 
 ---
@@ -236,20 +236,20 @@ static inline u32_t dhcpd_get_ip(void)    { return g_server_ip; }
 
   <https://github.com/viys/ML305A_ML307A_OpenCPU_Standard_1.4.2.2023062518_release/blob/master/include/platform/lwip/lwip/dhcpd_api.h>
 
-### 2.4 电脑侧默认网关是不是 192.168.0.1？
+### 2.4 电脑侧默认网关是不是 192.168.4.1？
 
 **结论：未证实。** 证据状态如下：
 
-- 【官方依据（间接）】SDK 平台头文件里唯一可见的**编译期默认**是 `LWIP_ROUTER_IP (0xC0A80000)`，注释写 `/* 192.168.x.x */` —— `0xC0A80000` 是 **192.168.0.0**，即默认家族是 **192.168.0.x**，与"192.168.0.1"不一致（是否被其它预编译库覆盖，**未证实**）。
+- 【官方依据（间接）】SDK 平台头文件里唯一可见的**编译期默认**是 `LWIP_ROUTER_IP (0xC0A80000)`，注释写 `/* 192.168.x.x */` —— `0xC0A80000` 是 **192.168.0.0**，即默认家族是 **192.168.0.x**，与"192.168.4.1"不一致（是否被其它预编译库覆盖，**未证实**）。
   来源：`netif_td.h`，链接同上。
 - 【官方依据】真正的值是**运行期变量** `g_server_ip`，头文件不给数值；`dhcpd_router_ip()` 才是读取它的方法（见 2.3）。
-- 【社区经验，且**容易误用**】公开资料里确实出现过"192.168.0.1"，但它来自**另一款基于 ML307A 的成品短信转发器**："手机连接短信宝辐射出来的 WIFI（SMS-Forwarder-AP）… 浏览器打开 **192.168.0.1**" —— 这是该产品的 **WiFi SoftAP 登录地址**，**不是** ML307A 的 RNDIS 网关。
+- 【社区经验，且**容易误用**】公开资料里确实出现过"192.168.4.1"，但它来自**另一款基于 ML307A 的成品短信转发器**："手机连接短信宝辐射出来的 WIFI（SMS-Forwarder-AP）… 浏览器打开 **192.168.4.1**" —— 这是该产品的 **WiFi SoftAP 登录地址**，**不是** ML307A 的 RNDIS 网关。
   来源：<https://www.yingdao.com/community/detaildiscuss?id=929944702702145536>
 - 【未证实】中移《ML307A 拨号上网用户手册》（PDF，本次未解析）最可能写明该 IP：
   <https://gitee.com/YZRDEG/ML307A/raw/master/ML307A_%E8%B5%84%E6%96%99/ML307A_%E6%8B%A8%E5%8F%B7%E4%B8%8A%E7%BD%91%E7%94%A8%E6%88%B7%E6%89%8B%E5%86%8C_V1.0.0.pdf>
   （同目录还有《TCP/IP 用户手册 V3.0.0》《AT_Commands_Reference_Guide_4G_Series_V1.2.0》，目录页：<https://gitee.com/YZRDEG/ML307A/tree/master/ML307A_%E8%B5%84%E6%96%99>）
 
-**结论写法建议**：在固件/文档里**不要把 192.168.0.1 写成事实**，应写"待实测/以中移《拨号上网用户手册》为准"。
+**结论写法建议**：在固件/文档里**不要把 192.168.4.1 写成事实**，应写"待实测/以中移《拨号上网用户手册》为准"。
 
 ### 2.5 "软件如何查询该 IP"
 
@@ -257,7 +257,7 @@ static inline u32_t dhcpd_get_ip(void)    { return g_server_ip; }
 
 1. **OpenCPU 官方 API：没有。** 逐一核对 1.4.2 的 `include/cmiot` 40 个头文件，没有任何"查询本机/网卡/DHCP 网关 IP"的 `cm_*` 接口；`cm_asocket.h` 只把标准 socket 接口做了别名（`bind/getpeername/getsockname/getsockopt/...`），`getsockname()` 只能拿到**socket 自身的本地地址**，拿不到 RNDIS 网卡的网关。
    <https://github.com/viys/ML305A_ML307A_OpenCPU_Standard_1.4.2.2023062518_release/blob/master/include/cmiot/cm_asocket.h>
-2. **虚拟 AT（3GPP，可实测）**：`AT+CGPADDR` 可查模块自身 PDP 地址（社区实测响应形如 `+CGPADDR: 1,"10.0.0.100","2408:..."`）——这是**模块的公网/私网地址，不是 PC 侧网关**。
+2. **虚拟 AT（3GPP，可实测）**：`AT+CGPADDR` 可查模块自身 PDP 地址（社区实测响应形如 `+CGPADDR: 1,"10.36.30.61","2408:..."`）——这是**模块的公网/私网地址，不是 PC 侧网关**。
    【社区经验】<https://blog.csdn.net/qq_41954594/article/details/150221963>
 3. **平台内部接口（非官方 OpenCPU API，不建议生产使用）**：`dhcpd_router_ip()` / `g_server_ip`（`dhcpd_api.h`）。它给出的正是"作为 DHCP 服务器的本机地址"，即 PC 侧看到的默认网关。风险：属于预编译平台层的内部符号，没有官方兼容承诺。
 4. **最省事的办法**：在 PC 侧 `ipconfig` 读 RNDIS 网络适配器的默认网关（部署/运维层面的答案）。
@@ -345,7 +345,7 @@ u32_t td_get_rx_speed(void);
 | 核实结论 | 对应的设计决定 |
 |---|---|
 | 1. 没有 `cm_sms.h`，短信 = 虚拟 AT + 自写 PDU 编解码；URC 只给原始字符串 | **设计决定**：自建 `sms` 模块——① `cm_virt_at_urc_reg()` 常驻注册，回调内**只拷贝 + `osEventFlagsSet()`**；② 一个专用 SMS 线程做 `osEventFlagsWait()` → PDU 解码 → 入队（`osMessageQueueNew/Put/Get`，见 `cm_os.h`）；③ 全局**互斥锁串行化**所有虚拟 AT 事务（官方明示不支持多线程操作虚拟 AT，且每次都要 init/deinit）；④ 自己实现 PDU 解码（GSM7/UCS2、UDH 长短信拼接、SCTS 时间戳），发送走 `cm_virt_at_sms_send()` 并**在 PDU 中带 SMSC**（官方注意事项 4）；⑤ 收不到短信时用 `AT+CSMS?`/`AT+CPMS?`/`AT+CNMI?`/`AT+CMGL=4` 做自检与补收；⑥ 落地存储用 `cm_fs_open/write/read`（**无路径/目录**，`cm_fs_sync` 被 `#if 0` 关掉）；⑦ 预留"URC 被截断时重发续读"的逻辑（官方注意事项 3 点名"读取短信消息"） |
-| 2. 没有 RNDIS 运行时 API；构建期也没有 USB/RNDIS 开关；无法从 OpenCPU 官方 API 拿到网关 IP | **设计决定**：① **不要**在固件里规划"运行时开/关 RNDIS"功能，也不要依赖任何 `cm_usb_rndis_*` 之类的接口（不存在，等于编造）；② 电脑侧上网能力划归 AT 版/NV/出厂配置范畴，需中移 FAE 书面确认（问题清单见文末）；③ 若产品必须知道 PC 侧网关 IP，**做成可配置项**（默认不写 192.168.0.1，UI/文档写"待实测"），或在允许使用内部接口的前提下用 `dhcpd_router_ip()` 兜底并加注释说明其不受支持；④ 1.4.3 的 `cm_usb.h` 可用来做"USB 插拔 + 虚拟串口透传"（`cm_usb2com_register_status_cb` / `cm_usb2com_send_data`），这与联网无关，别混用 |
+| 2. 没有 RNDIS 运行时 API；构建期也没有 USB/RNDIS 开关；无法从 OpenCPU 官方 API 拿到网关 IP | **设计决定**：① **不要**在固件里规划"运行时开/关 RNDIS"功能，也不要依赖任何 `cm_usb_rndis_*` 之类的接口（不存在，等于编造）；② 电脑侧上网能力划归 AT 版/NV/出厂配置范畴，需中移 FAE 书面确认（问题清单见文末）；③ 若产品必须知道 PC 侧网关 IP，**做成可配置项**（默认不写 192.168.4.1，UI/文档写"待实测"），或在允许使用内部接口的前提下用 `dhcpd_router_ip()` 兜底并加注释说明其不受支持；④ 1.4.3 的 `cm_usb.h` 可用来做"USB 插拔 + 虚拟串口透传"（`cm_usb2com_register_status_cb` / `cm_usb2com_send_data`），这与联网无关，别混用 |
 | 3. 没有 PING API；`AT+MPING` 属私有指令、虚拟 AT 是否支持未证实；流量无官方字节统计 | **设计决定**：① 心跳/在线检测**不要依赖 ICMP**：默认方案用"TCP connect / HTTP HEAD / MQTT keepalive 时长"；② 如确需 PING，先做 30 分钟真机实验验证 `AT+MPING` 经 `cm_virt_at_send()` 是否回 `OK` 与 `+MPING:`（成功则按私有指令处理并加降级分支，失败则退回 TCP 探测；raw socket 路线作为实验分支，不当主线）；③ 流量统计**自建**：在 socket/HTTP/MQTT 收发的返回处累加字节，按小时/天滚动持久化到 `cm_fs`，上报给平台；④ `cm_radio_info_t.tx_time/rx_time` 只用于"链路活跃时长/在线率"指标，**不要**当流量用 |
 
 ---
@@ -353,7 +353,7 @@ u32_t td_get_rx_speed(void);
 ## 附：未证实项与最小验证步骤
 
 **未证实清单（不要写进固件设计文档当事实）**
-1. `192.168.0.1` 是 ML307A RNDIS 默认网关（SDK 头文件里唯一可见默认是 `0xC0A80000` = 192.168.0.x；"192.168.0.1"来源是另一个产品的 SoftAP）。
+1. `192.168.4.1` 是 ML307A RNDIS 默认网关（SDK 头文件里唯一可见默认是 `0xC0A80000` = 192.168.0.x；"192.168.4.1"来源是另一个产品的 SoftAP）。
 2. `AT+MDIALUPCFG="auto",1/0` 是否等于"开/关 RNDIS 网卡"。
 3. `AT+MPING` 能否经 OpenCPU 虚拟 AT 使用（官方明示只支持 3GPP 指令）。
 4. `cm_virt_at_sms_send()` 的入参格式与发送结果反馈方式。
@@ -375,3 +375,4 @@ u32_t td_get_rx_speed(void);
 - 中移官方 OpenCPU 手册目录（Gitee）：<https://gitee.com/YZRDEG/ML307A/tree/master/ML307A_OPENCPU%E6%89%8B%E5%86%8C>
 - 中移官方资料（AT 手册/TCP-IP 手册/拨号上网手册，Gitee）：<https://gitee.com/YZRDEG/ML307A/tree/master/ML307A_%E8%B5%84%E6%96%99>
 - 官方下载中心（OneMO）：<https://os.iot.10086.cn/download/case>
+

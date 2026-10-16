@@ -794,7 +794,7 @@ release package '%s' has no download.json
 
 **先纠正一个关键误解：QFlash 是 Quectel（移远）的工具，不是中移的工具。**
 
-本机 `<DOWNLOADS>\QFlash_V8.1_CN.zip` (400,100,321 字节) 内含：
+本机 `C:\Users\<USER>\Downloads\QFlash_V8.1_CN.zip` (400,100,321 字节) 内含：
 ```
 QFlash_V8.1_CN/QFlash_V8.1.zip
 QFlash_V8.1_CN/Quectel_QFlash_用户指南_V4.5.pdf     ← 文件名即 "Quectel"
@@ -1182,7 +1182,7 @@ INC      += -I'$(DRV_UART_DIR)/lw_oopc'
 | `sdk\...\docs\ML305A_ML307A_OpenCPU_API手册.chm` | 已用 `hh.exe -decompile` 成功解出 209 个 Doxygen HTML（API 头文件源码），**纯 API 手册，无烧录章节** |
 | `sdk\...\tools\adiff\README.docx` | ASR 官方《ASR1601 FOTA》文档（`.pac` 无关，讲 FOTA 差分包） |
 | `sdk\...\tools\toolchain\gcc-arm-none-eabi\bin\arm-none-eabi-gcc.exe` | 实测 `arm-none-eabi-gcc 8.3.1 20190703 (release) [gcc-8-branch revision 273027]` |
-| `<DOWNLOADS>\QFlash_V8.1_CN.zip` | 内含 `Quectel_QFlash_用户指南_V4.5.pdf` 与 `QFlash_V8.1.zip` |
+| `C:\Users\<USER>\Downloads\QFlash_V8.1_CN.zip` | 内含 `Quectel_QFlash_用户指南_V4.5.pdf` 与 `QFlash_V8.1.zip` |
 | └ `QFlash_V8.1\ASR\1\adownload1.exe` | 自述 *"Asrmicro aboot download console application"*，含 `AT$MYDOWNLOAD=1`/`AT+QDOWNLOAD=1`/`Arom Usb Boot Port`/`aboot.zip` |
 | └ `QFlash_V8.1\aboot.dll` | 含 `download.json`/`arom\|arom-tiny`/`crane`/`config/template/`/`dbconfig/product/` |
 | └ `QFlash_V8.1\Setting\UpgradeDownload.ini` | 含 `UserGuide = UNISOC Download User Guide V4.1.pdf`（证明主体为展锐工具） |
@@ -1198,3 +1198,4 @@ INC      += -I'$(DRV_UART_DIR)/lw_oopc'
 > 得到 **`out\images\ML307A\DSLN\ML307A_DSLN_APP.zip`**（约 10.4MB，内含 `download.json` + `user_app.bin` + 全部基线镜像）。
 > **不是 `.pac`**。这个 zip 就是交给下载工具的东西；工具需要能识别 **ASR aboot release package**。
 > 日志看 **UART0 / 921600**，找 `ML307A Start`。
+

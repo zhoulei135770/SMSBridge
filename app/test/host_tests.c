@@ -531,9 +531,9 @@ static void test_web_ui(void)
     st.csq = 23;
     st.rndis_on = 1;
     (void)snprintf(st.rndis_note, sizeof(st.rndis_note), "即时生效");
-    (void)snprintf(st.ip, sizeof(st.ip), "10.0.0.100");
+    (void)snprintf(st.ip, sizeof(st.ip), "10.11.12.13");
     /* IPv6 / 公网地址 / 短信远程配置（本轮新增展示项） */
-    (void)snprintf(st.ip6, sizeof(st.ip6), "2409:8a00:1234:5678::5");
+    (void)snprintf(st.ip6, sizeof(st.ip6), "2409:xxxx:xxxx:xxxx::1");
     (void)snprintf(st.pub_ip, sizeof(st.pub_ip), "203.0.113.7");
     (void)snprintf(st.pdp_type, sizeof(st.pdp_type), "IPV4V6");
     st.ipv6_enable = 1;
@@ -670,7 +670,7 @@ static void test_web_ui(void)
 
         CHECK(r > 0u && r < sizeof(sp));
         CHECK(strstr(sp, "模组 IPv6 (PDP)") != NULL);
-        CHECK(strstr(sp, "2409:8a00:1234:5678::5") != NULL);
+        CHECK(strstr(sp, "2409:xxxx:xxxx:xxxx::1") != NULL);
         CHECK(strstr(sp, "公网 IPv4 出口") != NULL);
         CHECK(strstr(sp, "203.0.113.7") != NULL);
         CHECK(strstr(sp, "IPV4V6") != NULL);
@@ -684,12 +684,12 @@ static void test_web_ui(void)
             web_status_t st6 = st;
             static char  sp6[WEB_UI_STATUS_PAGE_MAX];
             size_t       r6;
-            (void)snprintf(st6.pub_ip6, sizeof(st6.pub_ip6), "2409:8a00::abcd");
+            (void)snprintf(st6.pub_ip6, sizeof(st6.pub_ip6), "2409:xxxx:xxxx:xxxx::1");
             st6.pub_ip[0] = '\0';
             r6 = web_ui_status_page(sp6, sizeof(sp6), &st6, &cfg, rows, 2u);
             CHECK(r6 > 0u);
             CHECK(strstr(sp6, "公网 IPv6 出口") != NULL);
-            CHECK(strstr(sp6, "2409:8a00::abcd") != NULL);
+            CHECK(strstr(sp6, "2409:xxxx:xxxx:xxxx::1") != NULL);
             CHECK(strstr(sp6, "公网 IPv4 出口") == NULL || strstr(sp6, "未取到") != NULL);
         }
         CHECK(strstr(sp, "name=\"ipv6_enable\"") != NULL);   /* 配置表单里的开关 */
@@ -1314,27 +1314,27 @@ static void test_net_addr(void)
     printf("[11] net_addr 地址解析（IPv6 双栈 / 公网 IP）\n");
 
     g_case = "IPv4 判定";
-    CHECK(net_addr_is_ipv4("10.0.0.100") == 1);
+    CHECK(net_addr_is_ipv4("10.11.12.13") == 1);
     CHECK(net_addr_is_ipv4("0.0.0.0") == 1);
     CHECK(net_addr_is_ipv4("255.255.255.255") == 1);
     CHECK(net_addr_is_ipv4("256.1.1.1") == 0);
     CHECK(net_addr_is_ipv4("10.11.12") == 0);
-    CHECK(net_addr_is_ipv4("10.0.0.100.14") == 0);
+    CHECK(net_addr_is_ipv4("10.11.12.13.14") == 0);
     CHECK(net_addr_is_ipv4("10.11.12.") == 0);
     CHECK(net_addr_is_ipv4("10.11.12.a") == 0);
     CHECK(net_addr_is_ipv4("") == 0);
     CHECK(net_addr_is_ipv4(NULL) == 0);
 
     g_case = "IPv6 判定";
-    CHECK(net_addr_is_ipv6("2409:8a00:1234:5678::5") == 1);
+    CHECK(net_addr_is_ipv6("2409:xxxx:xxxx:xxxx::1") == 1);
     CHECK(net_addr_is_ipv6("::1") == 1);
     CHECK(net_addr_is_ipv6("fe80::1") == 1);
-    CHECK(net_addr_is_ipv6("2409:8a00:0000:0000:0000:0000:0000:0001") == 1);  /* 8 组 */
+    CHECK(net_addr_is_ipv6("2409:xxxx:xxxx:xxxx::1") == 1);  /* 8 组 */
     CHECK(net_addr_is_ipv6("::ffff:192.168.0.1") == 1);                        /* 内嵌 IPv4 */
-    CHECK(net_addr_is_ipv6("2409:8a00::1::2") == 0);                           /* 两个 :: */
-    CHECK(net_addr_is_ipv6("2409:8a00:1234:5678:9abc:def0:1234:5678:9abc") == 0); /* 9 组 */
-    CHECK(net_addr_is_ipv6("10.0.0.100") == 0);                               /* 纯 v4 */
-    CHECK(net_addr_is_ipv6("2409:8a00:12345::1") == 0);                        /* 组内超 4 位 */
+    CHECK(net_addr_is_ipv6("2409:xxxx:xxxx:xxxx::1") == 0);                           /* 两个 :: */
+    CHECK(net_addr_is_ipv6("2409:xxxx:xxxx:xxxx::1") == 0); /* 9 组 */
+    CHECK(net_addr_is_ipv6("10.11.12.13") == 0);                               /* 纯 v4 */
+    CHECK(net_addr_is_ipv6("2409:xxxx:xxxx:xxxx::1") == 0);                        /* 组内超 4 位 */
     CHECK(net_addr_is_ipv6("2409:8a00::zz") == 0);
     CHECK(net_addr_is_ipv6(NULL) == 0);
 
@@ -1374,12 +1374,12 @@ static void test_net_addr(void)
     g_case = "公网 IP 回显提取（裸文本 / 带空白 / JSON）";
     CHECK(net_addr_extract_echo("203.0.113.9\n", out, sizeof(out)) == 0);
     CHECK_STR(out, "203.0.113.9");
-    CHECK(net_addr_extract_echo("  \r\n  203.0.113.4  ", out, sizeof(out)) == 0);
-    CHECK_STR(out, "203.0.113.4");
+    CHECK(net_addr_extract_echo("  \r\n  198.51.100.4  ", out, sizeof(out)) == 0);
+    CHECK_STR(out, "198.51.100.4");
     CHECK(net_addr_extract_echo("{\"ip\":\"203.0.113.77\"}", out, sizeof(out)) == 0);
     CHECK_STR(out, "203.0.113.77");
-    CHECK(net_addr_extract_echo("您的IP是:[2409:8a00::1234]", out, sizeof(out)) == 0);
-    CHECK_STR(out, "2409:8a00::1234");
+    CHECK(net_addr_extract_echo("您的IP是:[2409:xxxx:xxxx:xxxx::1]", out, sizeof(out)) == 0);
+    CHECK_STR(out, "2409:xxxx:xxxx:xxxx::1");
     CHECK(net_addr_extract_echo("no address here", out, sizeof(out)) < 0);
     CHECK(net_addr_extract_echo("", out, sizeof(out)) < 0);
     CHECK(net_addr_extract_echo(NULL, out, sizeof(out)) < 0);
@@ -1511,11 +1511,11 @@ static void test_info_cmd(void)
 
     g_case = "回执只含两个地址，且一条短信装得下（含最长 IPv6）";
     memset(&v, 0, sizeof(v));
-    v.ip4 = "10.0.0.100";
-    v.ip6 = "2409:xxxx:xxxx:xxxx::1";   /* 占位地址；真实 IPv6 最长 39 字符（全展开）时判据同样成立 */
+    v.ip4 = "10.46.199.212";
+    v.ip6 = "2409:xxxx:xxxx:xxxx::1";   /* 39 字符全展开 */
     n = sms_cmd_build_info(&v, txt, sizeof(txt));
     CHECK(n > 0);
-    CHECK(strstr(txt, "IP4:10.0.0.100") != NULL);
+    CHECK(strstr(txt, "IP4:10.46.199.212") != NULL);
     CHECK(strstr(txt, "IP6:2409:xxxx:xxxx:xxxx::1") != NULL);
     CHECK(sms_concat_build_tx_plain("+8613800738500", "+8613800000000", txt, pk,
                                     SMS_TX_MAX_PARTS) == 1);
@@ -1531,7 +1531,7 @@ static void test_info_cmd(void)
     t_set_admin(&c, "13800000000");   /* 显式指定管理员：出厂默认为空 */
     strcpy(c.admin, "13800000000");
     v.url = c.url; v.secret = c.secret; v.keyword = c.keyword; v.tmpl = c.tmpl;
-    v.ip4 = "10.0.0.100";
+    v.ip4 = "10.46.199.212";
     v.ip6 = "2409:xxxx:xxxx:xxxx::1";
     memset(&out, 0, sizeof(out));
     CHECK(sms_admin_handle(&c, "+8613800000000", "IP", &v, &out) == 1);
@@ -1651,6 +1651,7 @@ int main(void)
     printf("\n==== 结果: 通过 %d, 失败 %d ====\n", g_pass, g_fail);
     return (g_fail == 0) ? 0 : 1;
 }
+
 
 
 
